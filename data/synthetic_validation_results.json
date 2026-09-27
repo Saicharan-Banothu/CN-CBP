@@ -1,96 +1,96 @@
 {
   "mode": "SYNTHETIC_SCENARIO_BENCHMARK",
-  "timestamp": 1790518465.9972928,
-  "total_trials": 9,
-  "trials_per_fault": 1,
+  "timestamp": 1790519795.5592055,
+  "total_trials": 45,
+  "trials_per_fault": 5,
   "overall_accuracy": 0.8889,
   "per_class_metrics": {
     "HEALTHY_NORMAL": {
       "precision": 0.0,
       "recall": 0.0,
       "f1_score": 0.0,
-      "support": 1
+      "support": 5
     },
     "LOCAL_GATEWAY_CONGESTION": {
       "precision": 0.5,
       "recall": 1.0,
       "f1_score": 0.6667,
-      "support": 1
+      "support": 5
     },
     "UPSTREAM_ISP_FAULT": {
       "precision": 1.0,
       "recall": 1.0,
       "f1_score": 1.0,
-      "support": 1
+      "support": 5
     },
     "DNS_FAILURE": {
       "precision": 1.0,
       "recall": 1.0,
       "f1_score": 1.0,
-      "support": 1
+      "support": 5
     },
     "TARGET_SERVICE_DOWN": {
       "precision": 1.0,
       "recall": 1.0,
       "f1_score": 1.0,
-      "support": 1
+      "support": 5
     },
     "NETWORK_CONGESTION_LOSSY_LINK": {
       "precision": 1.0,
       "recall": 1.0,
       "f1_score": 1.0,
-      "support": 1
+      "support": 5
     },
-    "PHYSICAL_CRC_CORRUPTION": {
+    "PACKET_INTEGRITY_ERROR": {
       "precision": 1.0,
       "recall": 1.0,
       "f1_score": 1.0,
-      "support": 1
+      "support": 5
     },
     "ROUTE_FLAP": {
       "precision": 1.0,
       "recall": 1.0,
       "f1_score": 1.0,
-      "support": 1
+      "support": 5
     },
     "APPLICATION_LAYER_FAILURE": {
       "precision": 1.0,
       "recall": 1.0,
       "f1_score": 1.0,
-      "support": 1
+      "support": 5
     }
   },
   "confusion_matrix": {
     "HEALTHY_NORMAL": {
       "HEALTHY_NORMAL": 0,
-      "LOCAL_GATEWAY_CONGESTION": 1,
+      "LOCAL_GATEWAY_CONGESTION": 5,
       "UPSTREAM_ISP_FAULT": 0,
       "DNS_FAILURE": 0,
       "TARGET_SERVICE_DOWN": 0,
       "NETWORK_CONGESTION_LOSSY_LINK": 0,
-      "PHYSICAL_CRC_CORRUPTION": 0,
+      "PACKET_INTEGRITY_ERROR": 0,
       "ROUTE_FLAP": 0,
       "APPLICATION_LAYER_FAILURE": 0
     },
     "LOCAL_GATEWAY_CONGESTION": {
       "HEALTHY_NORMAL": 0,
-      "LOCAL_GATEWAY_CONGESTION": 1,
+      "LOCAL_GATEWAY_CONGESTION": 5,
       "UPSTREAM_ISP_FAULT": 0,
       "DNS_FAILURE": 0,
       "TARGET_SERVICE_DOWN": 0,
       "NETWORK_CONGESTION_LOSSY_LINK": 0,
-      "PHYSICAL_CRC_CORRUPTION": 0,
+      "PACKET_INTEGRITY_ERROR": 0,
       "ROUTE_FLAP": 0,
       "APPLICATION_LAYER_FAILURE": 0
     },
     "UPSTREAM_ISP_FAULT": {
       "HEALTHY_NORMAL": 0,
       "LOCAL_GATEWAY_CONGESTION": 0,
-      "UPSTREAM_ISP_FAULT": 1,
+      "UPSTREAM_ISP_FAULT": 5,
       "DNS_FAILURE": 0,
       "TARGET_SERVICE_DOWN": 0,
       "NETWORK_CONGESTION_LOSSY_LINK": 0,
-      "PHYSICAL_CRC_CORRUPTION": 0,
+      "PACKET_INTEGRITY_ERROR": 0,
       "ROUTE_FLAP": 0,
       "APPLICATION_LAYER_FAILURE": 0
     },
@@ -98,10 +98,10 @@
       "HEALTHY_NORMAL": 0,
       "LOCAL_GATEWAY_CONGESTION": 0,
       "UPSTREAM_ISP_FAULT": 0,
-      "DNS_FAILURE": 1,
+      "DNS_FAILURE": 5,
       "TARGET_SERVICE_DOWN": 0,
       "NETWORK_CONGESTION_LOSSY_LINK": 0,
-      "PHYSICAL_CRC_CORRUPTION": 0,
+      "PACKET_INTEGRITY_ERROR": 0,
       "ROUTE_FLAP": 0,
       "APPLICATION_LAYER_FAILURE": 0
     },
@@ -110,9 +110,9 @@
       "LOCAL_GATEWAY_CONGESTION": 0,
       "UPSTREAM_ISP_FAULT": 0,
       "DNS_FAILURE": 0,
-      "TARGET_SERVICE_DOWN": 1,
+      "TARGET_SERVICE_DOWN": 5,
       "NETWORK_CONGESTION_LOSSY_LINK": 0,
-      "PHYSICAL_CRC_CORRUPTION": 0,
+      "PACKET_INTEGRITY_ERROR": 0,
       "ROUTE_FLAP": 0,
       "APPLICATION_LAYER_FAILURE": 0
     },
@@ -122,19 +122,19 @@
       "UPSTREAM_ISP_FAULT": 0,
       "DNS_FAILURE": 0,
       "TARGET_SERVICE_DOWN": 0,
-      "NETWORK_CONGESTION_LOSSY_LINK": 1,
-      "PHYSICAL_CRC_CORRUPTION": 0,
+      "NETWORK_CONGESTION_LOSSY_LINK": 5,
+      "PACKET_INTEGRITY_ERROR": 0,
       "ROUTE_FLAP": 0,
       "APPLICATION_LAYER_FAILURE": 0
     },
-    "PHYSICAL_CRC_CORRUPTION": {
+    "PACKET_INTEGRITY_ERROR": {
       "HEALTHY_NORMAL": 0,
       "LOCAL_GATEWAY_CONGESTION": 0,
       "UPSTREAM_ISP_FAULT": 0,
       "DNS_FAILURE": 0,
       "TARGET_SERVICE_DOWN": 0,
       "NETWORK_CONGESTION_LOSSY_LINK": 0,
-      "PHYSICAL_CRC_CORRUPTION": 1,
+      "PACKET_INTEGRITY_ERROR": 5,
       "ROUTE_FLAP": 0,
       "APPLICATION_LAYER_FAILURE": 0
     },
@@ -145,8 +145,8 @@
       "DNS_FAILURE": 0,
       "TARGET_SERVICE_DOWN": 0,
       "NETWORK_CONGESTION_LOSSY_LINK": 0,
-      "PHYSICAL_CRC_CORRUPTION": 0,
-      "ROUTE_FLAP": 1,
+      "PACKET_INTEGRITY_ERROR": 0,
+      "ROUTE_FLAP": 5,
       "APPLICATION_LAYER_FAILURE": 0
     },
     "APPLICATION_LAYER_FAILURE": {
@@ -156,9 +156,9 @@
       "DNS_FAILURE": 0,
       "TARGET_SERVICE_DOWN": 0,
       "NETWORK_CONGESTION_LOSSY_LINK": 0,
-      "PHYSICAL_CRC_CORRUPTION": 0,
+      "PACKET_INTEGRITY_ERROR": 0,
       "ROUTE_FLAP": 0,
-      "APPLICATION_LAYER_FAILURE": 1
+      "APPLICATION_LAYER_FAILURE": 5
     }
   }
 }

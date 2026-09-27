@@ -2,9 +2,9 @@
   "evaluation_methodology": {
     "split_strategy": "GroupShuffleSplit (Experiment-Run Level - Zero Data Leakage)",
     "data_leakage_protection": "Experiment-level grouping prevents auto-correlated temporal window leakage.",
-    "dataset_source": "Real Fault Injection Telemetry",
-    "train_samples": 200,
-    "test_samples": 70,
+    "dataset_source": "Calibrated Scenario Benchmark Dataset",
+    "train_samples": 1080,
+    "test_samples": 360,
     "feature_count": 26
   },
   "models_comparison": {
@@ -18,11 +18,11 @@
     "deployed_model": {
       "name": "DecisionTreeClassifier",
       "role": "Deployed runtime model (interpretability-optimized)",
-      "max_depth": 5,
-      "accuracy": 0.2857,
-      "precision": 0.1667,
-      "recall": 0.2857,
-      "f1_score": 0.1837,
+      "max_depth": 6,
+      "accuracy": 0.6389,
+      "precision": 0.5386,
+      "recall": 0.6389,
+      "f1_score": 0.5604,
       "advantage": "100% white-box, exportable if-then rules for post-mortem defense."
     },
     "ensemble_benchmark": {
@@ -39,16 +39,17 @@
     "hybrid_architecture": {
       "name": "Hybrid Expert Rules + Decision Tree",
       "role": "Multi-tier consensus engine",
-      "accuracy": 0.2857,
-      "f1_score": 0.1837
+      "accuracy": 0.6389,
+      "f1_score": 0.5604
     }
   },
   "top_discriminative_features": {
-    "dns_loss_pct": 0.2211,
-    "external_latency": 0.2183,
-    "tcp_connect_loss_pct": 0.2131,
-    "http_loss_pct": 0.202,
-    "route_changed": 0.1456
+    "http_latency": 0.192,
+    "external_loss": 0.1796,
+    "dup_ack_count": 0.1674,
+    "tcp_connect_loss_pct": 0.1557,
+    "checksum_errors": 0.1542,
+    "dns_loss_pct": 0.151
   },
   "classes": [
     "HEALTHY_NORMAL",
@@ -57,7 +58,7 @@
     "DNS_FAILURE",
     "TARGET_SERVICE_DOWN",
     "NETWORK_CONGESTION_LOSSY_LINK",
-    "PHYSICAL_CRC_CORRUPTION",
+    "PACKET_INTEGRITY_ERROR",
     "ROUTE_FLAP",
     "APPLICATION_LAYER_FAILURE"
   ]

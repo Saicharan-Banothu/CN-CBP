@@ -38,7 +38,7 @@ FAULT_CLASSES = [
     "DNS_FAILURE",
     "TARGET_SERVICE_DOWN",
     "NETWORK_CONGESTION_LOSSY_LINK",
-    "PHYSICAL_CRC_CORRUPTION",
+    "PACKET_INTEGRITY_ERROR",  # IP/TCP checksum errors captured via software; not Ethernet FCS
     "ROUTE_FLAP",
     "APPLICATION_LAYER_FAILURE",
 ]
@@ -257,7 +257,7 @@ class StaticThresholdClassifier:
         route_changed = vec[25]
 
         if chk_errs > 2:
-            return 6  # PHYSICAL_CRC_CORRUPTION
+            return 6  # PACKET_INTEGRITY_ERROR (IP/TCP checksum errors)
         if dns_loss > 50.0:
             return 3  # DNS_FAILURE
         if http_status in (500, 502, 503) or (http_loss > 50.0 and tcp_loss == 0.0):
@@ -390,7 +390,7 @@ class NetworkFaultMLClassifier:
                         loss_pct = np.random.uniform(10.0, 35.0)
                         jitter = np.random.uniform(12.0, 40.0)
 
-                    elif class_name == "PHYSICAL_CRC_CORRUPTION":
+                    elif class_name in ("PACKET_INTEGRITY_ERROR", "PHYSICAL_CRC_CORRUPTION"):
                         chk_errs = int(np.random.uniform(3, 15))
                         chk_rate = chk_errs / 20.0
                         loss_pct = np.random.uniform(5.0, 25.0)

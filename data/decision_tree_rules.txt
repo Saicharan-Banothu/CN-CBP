@@ -1,21 +1,24 @@
 === NETWORK AUTOPSY - DEPLOYED DECISION TREE RULES ===
-Architecture: Interpretable CART Decision Tree (max_depth=5)
+Architecture: Interpretable CART Decision Tree (max_depth=6)
 Validation Split: GroupShuffleSplit (Experiment-Run Level - Zero Data Leakage)
-Classes: HEALTHY_NORMAL, LOCAL_GATEWAY_CONGESTION, UPSTREAM_ISP_FAULT, DNS_FAILURE, TARGET_SERVICE_DOWN, NETWORK_CONGESTION_LOSSY_LINK, PHYSICAL_CRC_CORRUPTION, ROUTE_FLAP, APPLICATION_LAYER_FAILURE
+Classes: HEALTHY_NORMAL, LOCAL_GATEWAY_CONGESTION, UPSTREAM_ISP_FAULT, DNS_FAILURE, TARGET_SERVICE_DOWN, NETWORK_CONGESTION_LOSSY_LINK, PACKET_INTEGRITY_ERROR, ROUTE_FLAP, APPLICATION_LAYER_FAILURE
 
-|--- dns_loss_pct <= 40.00
-|   |--- external_latency <= 107.33
-|   |   |--- tcp_connect_loss_pct <= 50.00
-|   |   |   |--- http_loss_pct <= 50.00
-|   |   |   |   |--- route_changed <= 0.50
-|   |   |   |   |   |--- class: 1
-|   |   |   |   |--- route_changed >  0.50
-|   |   |   |   |   |--- class: 7
-|   |   |   |--- http_loss_pct >  50.00
-|   |   |   |   |--- class: 8
-|   |   |--- tcp_connect_loss_pct >  50.00
-|   |   |   |--- class: 4
-|   |--- external_latency >  107.33
+|--- http_latency <= 1064.43
+|   |--- external_loss <= 13.36
+|   |   |--- dup_ack_count <= 3.00
+|   |   |   |--- tcp_connect_loss_pct <= 50.00
+|   |   |   |   |--- checksum_errors <= 1.50
+|   |   |   |   |   |--- dns_loss_pct <= 40.00
+|   |   |   |   |   |   |--- class: 1
+|   |   |   |   |   |--- dns_loss_pct >  40.00
+|   |   |   |   |   |   |--- class: 3
+|   |   |   |   |--- checksum_errors >  1.50
+|   |   |   |   |   |--- class: 6
+|   |   |   |--- tcp_connect_loss_pct >  50.00
+|   |   |   |   |--- class: 4
+|   |   |--- dup_ack_count >  3.00
+|   |   |   |--- class: 5
+|   |--- external_loss >  13.36
 |   |   |--- class: 2
-|--- dns_loss_pct >  40.00
-|   |--- class: 3
+|--- http_latency >  1064.43
+|   |--- class: 8

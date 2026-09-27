@@ -290,6 +290,7 @@ def get_health():
     """
     Calculates overall network health score (0-100), primary state (Healthy, Degraded, Critical),
     and explainable contributor impact points.
+    Latency penalty is baseline-aware (uses adaptive learned EMA mean, not a hardcoded threshold).
     """
     features = aggregator.aggregate_current_window()
     anomalies = baseline_learner.evaluate_window(features)
@@ -297,10 +298,16 @@ def get_health():
     if not open_incidents:
         open_incidents = db.get_incidents(limit=5, status="DETECTED")
 
+    # Fetch adaptive baselines for baseline-aware scoring
+    baselines = baseline_learner.get_ui_summary()
+    base_lat = baselines.get("avg_latency", {}).get("mean", 25.0)
+    # Conservative floor: never penalise below 30ms baseline (well-connected links)
+    lat_threshold = max(base_lat * 2.0, 50.0)  # 2x learned baseline, minimum 50ms
+
     score = 100
     contributors = []
 
-    # 1. Packet Loss Penalty
+    # 1. Packet Loss Penalty (absolute — any loss is abnormal)
     if features.loss_pct > 0:
         loss_pen = min(int(features.loss_pct * 2.0), 40)
         score -= loss_pen
@@ -314,18 +321,21 @@ def get_health():
             "explanation": f"Packets dropped in transmission reduce score by {loss_pen} points.",
         })
 
-    # 2. Latency Anomaly Penalty
-    if features.avg_latency > 60:
-        lat_pen = min(int((features.avg_latency - 60) * 0.4), 25)
+    # 2. Latency Anomaly Penalty (BASELINE-AWARE: uses adaptive learned mean, not hardcoded 60ms)
+    if features.avg_latency > lat_threshold:
+        lat_pen = min(int((features.avg_latency - lat_threshold) * 0.4), 25)
         score -= lat_pen
         contributors.append({
             "parameter": "Connection Delay",
             "impact_points": lat_pen,
             "penalty": -lat_pen,
             "observed": f"{features.avg_latency:.1f} ms",
-            "baseline": "< 40 ms",
+            "baseline": f"< {lat_threshold:.0f} ms (2× learned baseline: {base_lat:.0f} ms)",
             "severity": "HIGH" if lat_pen > 15 else "LOW",
-            "explanation": f"Latency above normal baseline reduces score by {lat_pen} points.",
+            "explanation": (
+                f"Latency {features.avg_latency:.0f}ms exceeds 2× learned baseline ({base_lat:.0f}ms) "
+                f"— reduces score by {lat_pen} points."
+            ),
         })
 
     # 3. DNS Failure Penalty
@@ -370,18 +380,21 @@ def get_health():
             "explanation": f"Transport layer re-sending data reduces score by {tcp_pen} points.",
         })
 
-    # 6. Packet Integrity Penalty
+    # 6. Packet Integrity (IP/TCP Checksum Errors from passive capture)
     if features.checksum_errors > 0:
         chk_pen = min(features.checksum_errors * 5, 20)
         score -= chk_pen
         contributors.append({
-            "parameter": "Packet Checksum Corruption",
+            "parameter": "Packet Integrity Validation",
             "impact_points": chk_pen,
             "penalty": -chk_pen,
-            "observed": f"{features.checksum_errors} checksum errors",
+            "observed": f"{features.checksum_errors} IP/TCP checksum errors",
             "baseline": "0",
             "severity": "CRITICAL",
-            "explanation": f"Corrupted packet headers reduce score by {chk_pen} points.",
+            "explanation": (
+                f"IP and TCP checksum errors detected via passive packet capture "
+                f"reduce score by {chk_pen} points."
+            ),
         })
 
     # 7. Route Instability Penalty
@@ -435,6 +448,8 @@ def get_health():
         "active_incidents": len(open_incidents),
         "anomalies_detected": len(anomalies),
         "contributors": contributors,
+        "baseline_latency_ms": round(base_lat, 1),
+        "latency_threshold_ms": round(lat_threshold, 1),
         "timestamp": time.time(),
     }
 
@@ -727,22 +742,54 @@ class FaultInjectionRequest(BaseModel):
 
 @app.post("/api/inject-fault")
 def inject_fault_endpoint(req: FaultInjectionRequest):
-    """Safely injects a controlled fault scenario without harming physical network interfaces."""
-    res = fault_controller.inject_safe_fault(
-        scenario_id=req.fault_type,
-        target=req.target,
-        duration_s=req.duration_s,
-        intensity=req.intensity,
-    )
-    if not res.get("success", False):
-        raise HTTPException(status_code=400, detail=res.get("error", "Failed to inject fault"))
-    return res
+    """
+    Safely injects a controlled fault scenario via the local socket proxy.
+    In CLOUD_DEMO mode this endpoint is intentionally disabled — socket-level
+    fault injection requires the local agent process, which is not available
+    on the cloud host. The Validation Lab still works via synthetic benchmarks.
+    """
+    mode = get_current_system_mode()
+    if mode == "CLOUD_DEMO":
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Fault injection is not available in Cloud Demo mode. "
+                "Socket-level fault injection requires the local Network Autopsy agent. "
+                "To test fault injection, run the project locally. "
+                "Use the Validation Lab's Synthetic Benchmark to validate diagnostic accuracy here."
+            ),
+        )
+
+    # Whitelist validation — only pre-audited scenarios are accepted
+    if req.fault_type not in SAFE_FAULT_SCENARIOS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown fault_type '{req.fault_type}'. Allowed values: {list(SAFE_FAULT_SCENARIOS.keys())}",
+        )
+
+    try:
+        res = fault_controller.inject_scenario(
+            scenario_type=req.fault_type,
+            target=req.target.split(":")[0] if ":" in req.target else req.target,
+            duration_s=req.duration_s,
+            intensity=max(0.1, req.intensity) if req.intensity > 0 else 1.0,
+        )
+        res["success"] = True
+        return res
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Fault injection error: {e}")
+        raise HTTPException(status_code=500, detail=f"Fault injection failed: {str(e)}")
 
 
 @app.post("/api/clear-faults")
 def clear_faults_endpoint():
     """Safely clears all injected faults and restores clean operational state."""
-    res = fault_controller.cleanup_all_faults()
+    mode = get_current_system_mode()
+    if mode == "CLOUD_DEMO":
+        return {"status": "NO_ACTIVE_FAULTS", "message": "No faults active in Cloud Demo mode."}
+    res = fault_controller.clear_all()
     return {"status": "ALL_FAULTS_CLEARED", "details": res}
 
 
@@ -817,13 +864,26 @@ class RunExperimentRequest(BaseModel):
 @app.post("/api/validation/run-experiment")
 def run_experiment_endpoint(req: RunExperimentRequest, background_tasks: BackgroundTasks):
     """
-    Triggers controlled experiment trial(s) in background or foreground.
+    Triggers controlled experiment trial(s) in foreground.
+    Real experiments require the local socket-proxy agent and cannot run on the cloud host.
+    In CLOUD_DEMO mode, only the Synthetic Benchmark (algorithmic unit tests) is available.
     """
     from sandbox.validation_runner import ValidationRunner
 
-    runner = ValidationRunner(db=db)
+    mode = get_current_system_mode()
+
     if req.mode == "real":
-        # Run 1 trial synchronously so the user gets immediate feedback in the Validation Lab
+        if mode == "CLOUD_DEMO":
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Real network experiments require the local probe agent and socket proxy, "
+                    "which are not running on the cloud host. This is expected cloud behavior "
+                    "— run the project locally for live fault injection trials. "
+                    "Use the Synthetic Benchmark to validate diagnostic accuracy in Cloud Demo mode."
+                ),
+            )
+        runner = ValidationRunner(db=db)
         trial_record = runner.run_single_real_trial(
             scenario_id=req.scenario_id,
             intensity=req.intensity,
@@ -835,6 +895,7 @@ def run_experiment_endpoint(req: RunExperimentRequest, background_tasks: Backgro
             "trial": trial_record.to_dict(),
         }
     else:
+        runner = ValidationRunner(db=db)
         results = runner.run_synthetic_benchmark(trials_per_fault=req.trials)
         return {
             "status": "SYNTHETIC_BENCHMARK_COMPLETED",
