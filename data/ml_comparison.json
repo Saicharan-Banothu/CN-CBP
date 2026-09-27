@@ -1,0 +1,32 @@
+{
+  "deployed_model": {
+    "name": "DecisionTreeClassifier",
+    "role": "Deployed runtime model (interpretability-optimized)",
+    "max_depth": 6,
+    "accuracy": 1.0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1_score": 1.0
+  },
+  "validation_baseline": {
+    "name": "RandomForestClassifier",
+    "role": "Validation benchmark (accuracy comparison only)",
+    "n_estimators": 100,
+    "accuracy": 1.0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1_score": 1.0
+  },
+  "summary": "Decision Tree achieved 100.0% accuracy while providing 100% transparent if-then rules exportable for viva and post-mortem analysis. Random Forest achieved 100.0% accuracy as the theoretical upper-bound benchmark.",
+  "classes": [
+    "HEALTHY_NORMAL",
+    "LOCAL_GATEWAY_CONGESTION",
+    "UPSTREAM_ISP_FAULT",
+    "DNS_FAILURE",
+    "TARGET_SERVICE_DOWN",
+    "NETWORK_CONGESTION_LOSSY_LINK",
+    "PHYSICAL_CRC_CORRUPTION",
+    "ROUTE_FLAP",
+    "APPLICATION_LAYER_FAILURE"
+  ]
+}

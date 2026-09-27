@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Autopsy — Real-Time Telemetry & Fault Diagnosis</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="dashboard-wrapper">
+        <!-- Header -->
+        <header class="header-bar">
+            <div class="brand-area">
+                <div class="brand-logo">📡</div>
+                <div class="brand-text">
+                    <h1>NETWORK AUTOPSY</h1>
+                    <p>Multi-Parameter Failure Diagnosis & Root-Cause Localization Engine</p>
+                </div>
+            </div>
+
+            <div class="controls-bar">
+                <button id="btnRunDiagnostic" class="btn btn-primary" title="Trigger full probe and diagnostic cycle now">
+                    ⚡ Run Diagnostic Now
+                </button>
+                
+                <select id="selectFaultType" class="select-control">
+                    <option value="LOCAL_GATEWAY_CONGESTION">Gateway / Wi-Fi Congestion</option>
+                    <option value="LATENCY_JITTER">Latency Spike (+150ms)</option>
+                    <option value="PACKET_LOSS">Packet Loss (30%)</option>
+                    <option value="DNS_FAILURE">DNS Resolver Failure</option>
+                    <option value="HTTP_SERVICE_DOWN">HTTP 503 Web Crash</option>
+                    <option value="ROUTE_FLAP">Route Flap / Path Shift</option>
+                    <option value="BANDWIDTH_THROTTLE">Bandwidth Throttle (128k)</option>
+                </select>
+
+                <button id="btnInjectFault" class="btn btn-danger" title="Inject selected test fault (Demo Mode)">
+                    🧪 Inject Test Fault
+                </button>
+
+                <button id="btnClearFaults" class="btn btn-outline" title="Clear all injected faults">
+                    🔄 Clear Faults
+                </button>
+            </div>
+        </header>
+
+        <!-- Dynamic Status Banner -->
+        <div id="statusBanner" class="status-banner"></div>
+
+        <!-- Top Section: Health Score & Telemetry Tiles -->
+        <section class="top-grid">
+            <!-- Health Badge Card -->
+            <div class="card health-badge-card">
+                <div id="healthGradeCircle" class="grade-circle A">A</div>
+                <div id="healthDesc" class="health-desc">Network Optimal</div>
+                <div id="healthSub" class="health-sub">Score: 98/100 | 0 active incidents</div>
+            </div>
+
+            <!-- Quick Metrics Row -->
+            <div class="metrics-row">
+                <div class="metric-tile">
+                    <span class="metric-label">Avg Latency</span>
+                    <span id="valLatency" class="metric-value">-- ms</span>
+                    <span class="metric-sub">ICMP RTT</span>
+                </div>
+                <div class="metric-tile">
+                    <span class="metric-label">Packet Loss</span>
+                    <span id="valLoss" class="metric-value" style="color: #34d399;">0.0 %</span>
+                    <span class="metric-sub">End-to-end</span>
+                </div>
+                <div class="metric-tile">
+                    <span class="metric-label">Jitter (σ)</span>
+                    <span id="valJitter" class="metric-value">-- ms</span>
+                    <span class="metric-sub">RTT Variation</span>
+                </div>
+                <div class="metric-tile">
+                    <span class="metric-label">DNS Time</span>
+                    <span id="valDns" class="metric-value">-- ms</span>
+                    <span class="metric-sub">Resolution RTT</span>
+                </div>
+                <div class="metric-tile">
+                    <span class="metric-label">TCP Retrans</span>
+                    <span id="valRetrans" class="metric-value">0</span>
+                    <span class="metric-sub">Passive sniffer</span>
+                </div>
+                <div class="metric-tile">
+                    <span class="metric-label">HTTP Health</span>
+                    <span id="valHttpStatus" class="metric-value" style="color: #60a5fa;">200</span>
+                    <span class="metric-sub">App status</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Charts Grid -->
+        <section class="charts-grid">
+            <div class="card">
+                <div class="card-title">
+                    <span>📈 Telemetry Timeline (Latency & Packet Loss)</span>
+                    <span style="font-size: 0.75rem; color: #9ca3af; font-family: monospace;">20s Rolling Windows</span>
+                </div>
+                <div class="chart-container">
+                    <canvas id="latencyLossChart"></canvas>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">
+                    <span>🍰 Protocol Distribution</span>
+                    <span style="font-size: 0.75rem; color: #9ca3af;">Passive Capture</span>
+                </div>
+                <div class="chart-container">
+                    <canvas id="protocolChart"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <!-- Path Topology & Incidents Grid -->
+        <section class="charts-grid">
+            <!-- Topology / Traceroute Path -->
+            <div class="card">
+                <div class="card-title">
+                    <span>🗺️ Network Path & Hop-Level Health (8.8.8.8)</span>
+                    <span id="hopConfidenceBadge" class="confidence-badge High">Path Healthy</span>
+                </div>
+                <table class="hop-table">
+                    <thead>
+                        <tr>
+                            <th>Hop</th>
+                            <th>IP Address</th>
+                            <th>RTT</th>
+                            <th>Loss %</th>
+                        </tr>
+                    </thead>
+                    <tbody id="hopsTableBody">
+                        <tr>
+                            <td>#1</td>
+                            <td>192.168.1.1 (Gateway)</td>
+                            <td>2.1 ms</td>
+                            <td>0.0%</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Incident Timeline -->
+            <div class="card">
+                <div class="card-title">
+                    <span>🔬 Autopsy Incidents Timeline</span>
+                    <span style="font-size: 0.75rem; color: #9ca3af;">Click item for full report</span>
+                </div>
+                <div id="incidentsList" style="max-height: 260px; overflow-y: auto;">
+                    <div style="padding: 1rem; color: #9ca3af; text-align: center;">Loading diagnostic incidents...</div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Incident Post-Mortem Modal -->
+    <div id="incidentModal" class="modal-overlay">
+        <div class="modal-content">
+            <button id="modalCloseBtn" class="modal-close">&times;</button>
+            <div id="modalBody">
+                <!-- Populated dynamically via dashboard.js -->
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/dashboard.js"></script>
+</body>
+</html>

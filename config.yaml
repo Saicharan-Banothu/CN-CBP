@@ -1,0 +1,44 @@
+# Network Autopsy System Configuration
+server:
+  host: "127.0.0.1"
+  port: 8000
+  reload: false
+
+storage:
+  db_path: "data/autopsy.db"
+
+agent:
+  probe_interval_seconds: 10.0
+  ping_targets:
+    - "auto_gateway"
+    - "8.8.8.8"
+    - "1.1.1.1"
+  traceroute_targets:
+    - "8.8.8.8"
+  tcp_targets:
+    - target: "auto_gateway"
+      port: 80
+    - target: "8.8.8.8"
+      port: 53
+    - target: "127.0.0.1"
+      port: 8000
+  dns_targets:
+    - hostname: "google.com"
+      dns_server: "8.8.8.8"
+    - hostname: "cloudflare.com"
+      dns_server: "1.1.1.1"
+  http_targets:
+    - "http://127.0.0.1:8000/api/demo-service/health"
+  sniffer:
+    interface: null          # null for default auto-detection
+    bpf_filter: "ip or arp"
+
+engine:
+  window_duration_seconds: 20.0
+  eval_interval_seconds: 10.0
+  baseline:
+    warmup_samples: 15
+    z_threshold: 3.0
+    alpha_ema: 0.05
+  ml:
+    max_depth: 6
