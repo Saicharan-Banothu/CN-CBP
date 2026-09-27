@@ -70,8 +70,12 @@ passive_capture_ref: Optional[PassiveCaptureAgent] = None
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
-# System Mode state tracking
+# System Mode state tracking & Security Guards
 SYSTEM_MODE_OVERRIDE: Optional[str] = None
+IS_CLOUD_DEMO: bool = bool(os.environ.get("RENDER") or os.environ.get("RENDER_SERVICE_ID") or os.environ.get("AUTOPSY_CLOUD_MODE"))
+_LAST_FAULT_TIME: float = 0.0
+_LAST_EXPERIMENT_TIME: float = 0.0
+_EXPERIMENT_LOCK = threading.Lock()
 
 
 def get_current_system_mode() -> str:
@@ -79,7 +83,7 @@ def get_current_system_mode() -> str:
     global SYSTEM_MODE_OVERRIDE
     if SYSTEM_MODE_OVERRIDE:
         return SYSTEM_MODE_OVERRIDE
-    if os.environ.get("RENDER") or os.environ.get("RENDER_SERVICE_ID") or os.environ.get("AUTOPSY_CLOUD_MODE"):
+    if IS_CLOUD_DEMO:
         return "CLOUD_DEMO"
     return "LOCAL_NETWORK"
 
@@ -212,6 +216,11 @@ class SystemModeRequest(BaseModel):
 def set_system_mode(req: SystemModeRequest):
     """Allows manual simulation or toggling between Local Network, Cloud Demo, and Demo modes."""
     global SYSTEM_MODE_OVERRIDE
+    if IS_CLOUD_DEMO and req.mode == "LOCAL_NETWORK":
+        raise HTTPException(
+            status_code=403,
+            detail="Cannot switch to LOCAL_NETWORK on Cloud Demo deployment. The cloud container does not have physical LAN access.",
+        )
     if req.mode in ("LOCAL_NETWORK", "CLOUD_DEMO", "DEMO_MODE"):
         SYSTEM_MODE_OVERRIDE = req.mode
         return {"status": "SUCCESS", "current_mode": SYSTEM_MODE_OVERRIDE}
@@ -300,7 +309,11 @@ def get_health():
 
     # Fetch adaptive baselines for baseline-aware scoring
     baselines = baseline_learner.get_ui_summary()
-    base_lat = baselines.get("avg_latency", {}).get("mean", 25.0)
+    lat_baseline_info = baselines.get("avg_latency", {})
+    base_lat = lat_baseline_info.get("mean", 25.0)
+    sample_count = lat_baseline_info.get("sample_count", 0)
+    baseline_mature = sample_count >= baseline_learner.warmup_samples
+    baseline_status = "ESTABLISHED" if baseline_mature else "WARMING_UP"
     # Conservative floor: never penalise below 30ms baseline (well-connected links)
     lat_threshold = max(base_lat * 2.0, 50.0)  # 2x learned baseline, minimum 50ms
 
@@ -426,25 +439,36 @@ def get_health():
 
     score = max(min(int(score), 100), 10)
 
+    primary_concern = contributors[0]["parameter"] if contributors else "None (Normal Operation)"
+    primary_penalty = contributors[0]["penalty"] if contributors else 0
+
     # Primary Health State & Grade mapping
     if score >= 85:
         health_status = "Healthy"
         grade = "A" if score >= 90 else "B"
-        summary = "Your network is operating within its normal range."
+        if not baseline_mature and len(open_incidents) == 0:
+            summary = f"Establishing network baseline ({sample_count}/{baseline_learner.warmup_samples} observations collected)..."
+        else:
+            summary = "Your network is operating within its normal range."
     elif score >= 60:
         health_status = "Degraded"
         grade = "C" if score >= 70 else "D"
-        summary = "Your connection is experiencing moderate performance degradation."
+        summary = f"Performance degradation detected: {primary_concern}."
     else:
         health_status = "Critical"
         grade = "F"
-        summary = "Severe network impairment or service failure detected."
+        summary = f"Severe network impairment detected: {primary_concern}."
 
     return {
         "health_status": health_status,
         "grade": grade,
         "score": score,
         "status_summary": summary,
+        "primary_concern": primary_concern,
+        "primary_penalty": primary_penalty,
+        "baseline_status": baseline_status,
+        "baseline_samples": sample_count,
+        "baseline_warmup_target": baseline_learner.warmup_samples,
         "active_incidents": len(open_incidents),
         "anomalies_detected": len(anomalies),
         "contributors": contributors,
@@ -574,6 +598,10 @@ def get_topology():
         "latency_ms": 0.0,
         "loss_pct": 0.0,
         "description": "Your local machine and network interface card",
+        "why_points": [
+            "Local network stack and socket interface operational",
+            "Active probe dispatcher and telemetry aggregator running",
+        ],
     })
 
     # Map hops
@@ -594,6 +622,23 @@ def get_topology():
             stage_name = f"HOP {hop_num}"
             desc = "Transit carrier / internet service provider router"
 
+        why = []
+        if rtt > 0:
+            why.append(f"Observed round-trip time: {rtt:.1f} ms")
+        else:
+            why.append("Hop did not respond to ICMP echo probe")
+        if loss > 0:
+            why.append(f"Packet loss measured at {loss:.1f}%")
+        else:
+            why.append("Zero packet loss observed at this segment")
+        if status in ("LIKELY_FAULT", "SUSPECTED"):
+            why.append(f"Degradation detected across {h.get('evidence_count', 1)} evaluation check(s)")
+            if hop_num == hop_analysis.suspect_hop_num:
+                for sig in hop_analysis.corroborating_signals:
+                    why.append(sig)
+        else:
+            why.append(f"Operating normally within expected network thresholds (Status: {status})")
+
         structured_stages.append({
             "stage": stage_name,
             "hop_number": hop_num,
@@ -606,11 +651,7 @@ def get_topology():
             "deviation_pct": h.get("deviation_pct", 0.0),
             "evidence_count": h.get("evidence_count", 0),
             "description": desc,
-            "why_points": [
-                f"Observed round-trip time: {rtt:.1f} ms" if rtt > 0 else "Hop did not respond to ICMP echo",
-                f"Packet loss rate: {loss:.1f}%",
-                f"Classification: {status}",
-            ],
+            "why_points": why,
         })
 
     # Summary statement
@@ -764,21 +805,44 @@ def inject_fault_endpoint(req: FaultInjectionRequest):
     if req.fault_type not in SAFE_FAULT_SCENARIOS:
         raise HTTPException(
             status_code=400,
-            detail=f"Unknown fault_type '{req.fault_type}'. Allowed values: {list(SAFE_FAULT_SCENARIOS.keys())}",
+            detail=f"Security restriction: Unknown fault_type '{req.fault_type}'. Whitelisted values: {list(SAFE_FAULT_SCENARIOS.keys())}",
         )
+
+    # Target sanitization: strictly restrict to loopback socket proxy
+    target_clean = req.target.strip()
+    if target_clean not in ("127.0.0.1", "127.0.0.1:8085", "localhost", "localhost:8085"):
+        raise HTTPException(
+            status_code=400,
+            detail="Security restriction: Fault injection target must be the local socket proxy (127.0.0.1:8085).",
+        )
+
+    # Parameter range validation
+    if not (1.0 <= req.duration_s <= 30.0):
+        raise HTTPException(status_code=400, detail="Security restriction: duration_s must be between 1.0 and 30.0 seconds.")
+    if not (0.0 <= req.intensity <= 1000.0):
+        raise HTTPException(status_code=400, detail="Security restriction: intensity must be between 0.0 and 1000.0.")
+
+    # Rate limiting / cooldown protection
+    global _LAST_FAULT_TIME
+    now = time.time()
+    if now - _LAST_FAULT_TIME < 2.0:
+        raise HTTPException(status_code=429, detail="Rate limit: Please wait 2 seconds between fault injections.")
+    _LAST_FAULT_TIME = now
 
     try:
         res = fault_controller.inject_scenario(
             scenario_type=req.fault_type,
-            target=req.target.split(":")[0] if ":" in req.target else req.target,
+            target="127.0.0.1",
             duration_s=req.duration_s,
             intensity=max(0.1, req.intensity) if req.intensity > 0 else 1.0,
         )
         res["success"] = True
         return res
     except ValueError as e:
+        fault_controller.clear_all()
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        fault_controller.clear_all()
         logger.error(f"Fault injection error: {e}")
         raise HTTPException(status_code=500, detail=f"Fault injection failed: {str(e)}")
 
@@ -864,7 +928,7 @@ class RunExperimentRequest(BaseModel):
 @app.post("/api/validation/run-experiment")
 def run_experiment_endpoint(req: RunExperimentRequest, background_tasks: BackgroundTasks):
     """
-    Triggers controlled experiment trial(s) in foreground.
+    Triggers controlled experiment trial(s) in foreground with strict security constraints.
     Real experiments require the local socket-proxy agent and cannot run on the cloud host.
     In CLOUD_DEMO mode, only the Synthetic Benchmark (algorithmic unit tests) is available.
     """
@@ -872,45 +936,105 @@ def run_experiment_endpoint(req: RunExperimentRequest, background_tasks: Backgro
 
     mode = get_current_system_mode()
 
-    if req.mode == "real":
-        if mode == "CLOUD_DEMO":
-            raise HTTPException(
-                status_code=503,
-                detail=(
-                    "Real network experiments require the local probe agent and socket proxy, "
-                    "which are not running on the cloud host. This is expected cloud behavior "
-                    "— run the project locally for live fault injection trials. "
-                    "Use the Synthetic Benchmark to validate diagnostic accuracy in Cloud Demo mode."
-                ),
-            )
-        runner = ValidationRunner(db=db)
-        trial_record = runner.run_single_real_trial(
-            scenario_id=req.scenario_id,
-            intensity=req.intensity,
-            duration_s=req.duration_s,
+    # Input validation
+    if req.mode not in ("real", "synthetic"):
+        raise HTTPException(status_code=400, detail="mode must be 'real' or 'synthetic'")
+    if req.scenario_id not in SAFE_FAULT_SCENARIOS and req.scenario_id != "ALL":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown scenario_id '{req.scenario_id}'. Whitelisted values: {list(SAFE_FAULT_SCENARIOS.keys()) + ['ALL']}",
         )
-        return {
-            "status": "EXPERIMENT_TRIAL_COMPLETED",
-            "mode": "REAL_NETWORK_DEGRADATION",
-            "trial": trial_record.to_dict(),
-        }
-    else:
-        runner = ValidationRunner(db=db)
-        results = runner.run_synthetic_benchmark(trials_per_fault=req.trials)
-        return {
-            "status": "SYNTHETIC_BENCHMARK_COMPLETED",
-            "mode": "SYNTHETIC_SCENARIO_VALIDATION",
-            "results": results,
-        }
+    if not (1 <= req.trials <= 20):
+        raise HTTPException(status_code=400, detail="trials must be between 1 and 20.")
+    if not (2.0 <= req.duration_s <= 30.0):
+        raise HTTPException(status_code=400, detail="duration_s must be between 2.0 and 30.0 seconds.")
+    if not (0.0 <= req.intensity <= 1000.0):
+        raise HTTPException(status_code=400, detail="intensity must be between 0.0 and 1000.0.")
+
+    # Concurrency and cooldown protection
+    global _LAST_EXPERIMENT_TIME, _EXPERIMENT_LOCK
+    now = time.time()
+    if now - _LAST_EXPERIMENT_TIME < 3.0:
+        raise HTTPException(
+            status_code=429,
+            detail="Experiment cooldown active. Please wait 3 seconds before running another experiment.",
+        )
+
+    if not _EXPERIMENT_LOCK.acquire(blocking=False):
+        raise HTTPException(
+            status_code=429,
+            detail="Another experiment is currently running. Concurrent experiments are blocked for stability.",
+        )
+
+    try:
+        _LAST_EXPERIMENT_TIME = time.time()
+
+        if req.mode == "real":
+            if mode == "CLOUD_DEMO":
+                raise HTTPException(
+                    status_code=503,
+                    detail=(
+                        "Real network experiments require the local probe agent and socket proxy, "
+                        "which are not running on the cloud host. This is expected cloud behavior "
+                        "— run the project locally for live fault injection trials. "
+                        "Use the Synthetic Benchmark to validate diagnostic accuracy in Cloud Demo mode."
+                    ),
+                )
+            runner = ValidationRunner(db=db)
+            trial_record = runner.run_single_real_trial(
+                scenario_id=req.scenario_id,
+                intensity=req.intensity,
+                duration_s=req.duration_s,
+            )
+            return {
+                "status": "EXPERIMENT_TRIAL_COMPLETED",
+                "mode": "REAL_NETWORK_DEGRADATION",
+                "trial": trial_record.to_dict(),
+            }
+        else:
+            runner = ValidationRunner(db=db)
+            results = runner.run_synthetic_benchmark(trials_per_fault=req.trials)
+            return {
+                "status": "SYNTHETIC_BENCHMARK_COMPLETED",
+                "mode": "SYNTHETIC_SCENARIO_VALIDATION",
+                "results": results,
+            }
+    finally:
+        _EXPERIMENT_LOCK.release()
+        try:
+            fault_controller.clear_all()
+        except Exception:
+            pass
 
 
 @app.get("/api/ml-models")
 def get_ml_models_info():
     """Returns 5-model ML comparison report, split methodology, and feature importances."""
+    data = {}
     if os.path.exists(COMPARISON_PATH):
-        with open(COMPARISON_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return ml_classifier.latest_metrics or {"message": "ML comparison not yet generated."}
+        try:
+            with open(COMPARISON_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception as e:
+            logger.warning(f"Failed to load ML comparison: {e}")
+    if not data and ml_classifier.latest_metrics:
+        data = ml_classifier.latest_metrics
+
+    # Format models array for direct UI rendering
+    models_list = []
+    if "models_comparison" in data:
+        for k, m in data["models_comparison"].items():
+            is_deployed = "Deployed" in m.get("role", "")
+            is_bench = "benchmark" in m.get("role", "").lower()
+            models_list.append({
+                "name": m.get("name", k),
+                "role": "DEPLOYED RUNTIME" if is_deployed else ("BENCHMARK ONLY" if is_bench else "COMPARATIVE"),
+                "accuracy": m.get("accuracy", 0.0),
+                "f1_macro": m.get("f1_score", 0.0),
+                "characteristic": m.get("advantage") or m.get("limitation") or "White-box if-then rules",
+            })
+    data["models"] = models_list
+    return data
 
 
 @app.get("/api/ml-features")

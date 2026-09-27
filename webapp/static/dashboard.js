@@ -391,6 +391,13 @@ async function fetchSystemStatus() {
                         switchTab("diagnostics");
                     };
                 }
+                const btnViewPath = document.getElementById("btnViewIssueOnPath");
+                if (btnViewPath) {
+                    btnViewPath.style.display = "inline-flex";
+                    btnViewPath.onclick = () => {
+                        navigateToPathHop(data.current_issue.likely_location);
+                    };
+                }
             } else {
                 issueBox.style.backgroundColor = "var(--color-success-bg)";
                 issueBox.style.borderColor = "var(--color-success-border)";
@@ -400,6 +407,8 @@ async function fetchSystemStatus() {
                 issueMeta.style.color = "var(--color-success-text)";
                 issueMeta.textContent = "Your network connection is healthy and responsive.";
                 if (btnUnderstand) btnUnderstand.style.display = "none";
+                const btnViewPath = document.getElementById("btnViewIssueOnPath");
+                if (btnViewPath) btnViewPath.style.display = "none";
             }
         }
 
@@ -463,14 +472,21 @@ function renderHealthScore(data) {
     const heroBadge = document.getElementById("heroHealthBadge");
     const scoreNum = document.getElementById("heroHealthScore");
     const deductionsList = document.getElementById("heroDeductionsList");
+    const concernText = document.getElementById("heroPrimaryConcernText");
+    const updatedText = document.getElementById("heroUpdatedAgoText");
 
     if (heroBadge) {
         heroBadge.className = "health-status-badge";
-        const status = data.health_status || "Healthy";
-        heroBadge.textContent = status;
-        if (status === "Healthy") heroBadge.classList.add("healthy");
-        else if (status === "Degraded") heroBadge.classList.add("degraded");
-        else heroBadge.classList.add("critical");
+        if (data.baseline_status === "WARMING_UP" && (!data.contributors || data.contributors.length === 0)) {
+            heroBadge.textContent = "Warming Baseline";
+            heroBadge.classList.add("degraded");
+        } else {
+            const status = data.health_status || "Healthy";
+            heroBadge.textContent = status;
+            if (status === "Healthy") heroBadge.classList.add("healthy");
+            else if (status === "Degraded") heroBadge.classList.add("degraded");
+            else heroBadge.classList.add("critical");
+        }
     }
 
     if (scoreNum) {
@@ -478,6 +494,25 @@ function renderHealthScore(data) {
         if (data.score >= 85) scoreNum.style.color = "var(--color-success)";
         else if (data.score >= 60) scoreNum.style.color = "var(--color-warning)";
         else scoreNum.style.color = "var(--color-danger)";
+    }
+
+    if (concernText) {
+        if (data.baseline_status === "WARMING_UP" && (!data.contributors || data.contributors.length === 0)) {
+            concernText.textContent = `Establishing Baseline (${data.baseline_samples || 0}/${data.baseline_warmup_target || 15} obs)`;
+            concernText.style.color = "var(--color-warning)";
+        } else {
+            concernText.textContent = data.primary_concern || "None (Normal Operation)";
+            concernText.style.color = data.contributors && data.contributors.length > 0 ? "var(--color-danger)" : "var(--color-text)";
+        }
+    }
+
+    if (updatedText) {
+        if (data.timestamp) {
+            const age = Math.max(0, Math.floor(Date.now() / 1000 - data.timestamp));
+            updatedText.textContent = age <= 3 ? "Just now" : `${age}s ago`;
+        } else {
+            updatedText.textContent = "Just now";
+        }
     }
 
     if (deductionsList && data.contributors) {
@@ -874,6 +909,11 @@ async function openIncidentReportModal(incidentId) {
                         <div><strong>Probable Root Cause:</strong> ${inc.probable_cause}</div>
                         <div style="margin-top: 4px;"><strong>Likely Affected Region:</strong> ${inc.hop_location} (Confidence: ${inc.hop_confidence})</div>
                         <div style="margin-top: 4px;"><strong>Overall Diagnosis Confidence:</strong> ${Math.round(inc.confidence_score * 100)}% (${ev.confidence_explanation || 'Corroborated across independent probe signals'})</div>
+                        <div style="margin-top: 10px;">
+                            <button class="btn btn-secondary btn-sm" onclick="navigateToPathHop('${inc.hop_location}')">
+                                🗺️ View Suspected Hop on Network Path →
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -926,6 +966,43 @@ function initModal() {
     modal?.addEventListener("click", (e) => {
         if (e.target === modal) close();
     });
+}
+
+function navigateToPathHop(hopLocationStr) {
+    switchTab("path");
+    const modal = document.getElementById("incidentModalBackdrop");
+    if (modal) modal.classList.remove("open");
+
+    if (!AppState.topologyData || !AppState.topologyData.stages) return;
+    const stages = AppState.topologyData.stages;
+
+    let targetIdx = -1;
+    const match = String(hopLocationStr).match(/hop\s*(\d+)/i);
+    if (match) {
+        const hopNum = parseInt(match[1]);
+        targetIdx = stages.findIndex(s => s.hop_number === hopNum);
+    }
+    if (targetIdx === -1 && String(hopLocationStr).toLowerCase().includes("gateway")) {
+        targetIdx = stages.findIndex(s => s.stage === "LOCAL GATEWAY" || s.hop_number === 1);
+    }
+    if (targetIdx === -1 && String(hopLocationStr).toLowerCase().includes("destination")) {
+        targetIdx = stages.findIndex(s => s.stage === "DESTINATION");
+    }
+    if (targetIdx === -1) {
+        targetIdx = Math.min(1, stages.length - 1);
+    }
+
+    setTimeout(() => {
+        openNodeInspection(targetIdx);
+        const nodeBtns = document.querySelectorAll("#fullTopologyPipeline .topology-node-btn");
+        if (nodeBtns && nodeBtns[targetIdx]) {
+            nodeBtns[targetIdx].scrollIntoView({ behavior: "smooth", block: "center" });
+            nodeBtns[targetIdx].style.boxShadow = "0 0 0 3px var(--color-primary)";
+            setTimeout(() => {
+                if (nodeBtns[targetIdx]) nodeBtns[targetIdx].style.boxShadow = "";
+            }, 3000);
+        }
+    }, 120);
 }
 
 /* ==========================================================================
@@ -1160,19 +1237,45 @@ async function fetchMLModels() {
         const res = await fetch("/api/ml-models");
         if (!res.ok) return;
         const data = await res.json();
-        const models = data.models || [];
-        const body = document.getElementById("mlModelsTableBody");
+        
+        let models = data.models;
+        if (!models && data.models_comparison) {
+            models = Object.values(data.models_comparison).map(m => {
+                const isDeployed = (m.role && m.role.toLowerCase().includes("deployed")) || m.name.includes("DecisionTree");
+                const isBench = (m.role && m.role.toLowerCase().includes("benchmark")) || m.name.includes("RandomForest");
+                return {
+                    name: m.name,
+                    role: isDeployed ? "DEPLOYED RUNTIME" : (isBench ? "BENCHMARK ONLY" : "COMPARATIVE"),
+                    accuracy: m.accuracy,
+                    f1_macro: m.f1_score,
+                    characteristic: m.advantage || m.limitation || "White-box if-then rules",
+                };
+            });
+        }
 
-        if (body && models.length > 0) {
-            body.innerHTML = models.map(m => `
+        // Expose Dataset source explicitly (Blocker 6)
+        const dsTitle = document.getElementById("mlDatasetSourceTitle");
+        const dsDesc = document.getElementById("mlDatasetSourceDesc");
+        if (data.evaluation_methodology) {
+            const ds = data.evaluation_methodology.dataset_source || "Real Fault Injection Telemetry";
+            if (dsTitle) dsTitle.textContent = ds;
+            if (dsDesc) dsDesc.textContent = `Samples: ${data.evaluation_methodology.train_samples || 200} train / ${data.evaluation_methodology.test_samples || 70} test (${data.evaluation_methodology.feature_count || 26} parameters).`;
+        }
+
+        const body = document.getElementById("mlModelsTableBody");
+        if (body && models && models.length > 0) {
+            body.innerHTML = models.map(m => {
+                const isDeployed = m.role === "DEPLOYED RUNTIME" || (m.role && m.role.includes("DEPLOYED"));
+                const roleBadgeClass = isDeployed ? "local" : "demo";
+                return `
                 <tr>
                     <td><strong>${m.name}</strong></td>
-                    <td><span class="mode-badge local">${m.role || 'Evaluated'}</span></td>
-                    <td><strong>${m.accuracy ? (m.accuracy * 100).toFixed(1) + '%' : '--'}</strong></td>
-                    <td><strong style="color: var(--color-primary);">${m.f1_macro ? (m.f1_macro * 100).toFixed(1) + '%' : '--'}</strong></td>
+                    <td><span class="mode-badge ${roleBadgeClass}">${m.role || 'Evaluated'}</span></td>
+                    <td><strong>${m.accuracy !== undefined ? (m.accuracy * 100).toFixed(1) + '%' : '--'}</strong></td>
+                    <td><strong style="color: var(--color-primary);">${m.f1_macro !== undefined ? (m.f1_macro * 100).toFixed(1) + '%' : '--'}</strong></td>
                     <td>${m.characteristic || 'White-box interpretability'}</td>
                 </tr>
-            `).join("");
+            `}).join("");
         }
     } catch (e) {
         console.warn("fetchMLModels error:", e);

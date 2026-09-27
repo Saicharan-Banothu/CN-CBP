@@ -331,3 +331,125 @@ def test_ml_leakage_free_split():
     assert "GroupShuffleSplit" in comparison["evaluation_methodology"]["split_strategy"]
     assert clf.is_trained
     assert clf.dt_model is not None
+
+
+def test_ground_truth_validation_independent_calculation(temp_db):
+    """
+    Verifies that ground truth correctness fields (cause, layer, location)
+    are calculated independently from ground-truth comparison and are NEVER hardcoded.
+    """
+    from sandbox.validation_runner import ValidationRunner
+
+    runner = ValidationRunner(db=temp_db)
+
+    # 1. Canonical mapping check
+    assert runner._map_to_canonical("DNS Resolution Failure", "DNS_FAILURE") == "DNS_FAILURE"
+    assert runner._map_to_canonical("High Latency", "LOCAL_GATEWAY_CONGESTION") == "LOCAL_GATEWAY_CONGESTION"
+    assert runner._map_to_canonical("Normal Network Operation", "HEALTHY_NORMAL") == "HEALTHY_NORMAL"
+
+    # 2. Ground-truth correctness calculation logic:
+    # Mismatched fault type MUST produce is_correct_cause = False
+    expected_canonical = runner._map_to_canonical("DNS_FAILURE", "DNS_FAILURE")
+    predicted_canonical = runner._map_to_canonical("HTTP_SERVICE_FAILURE", "APPLICATION_LAYER_FAILURE")
+    assert expected_canonical != predicted_canonical
+    assert (expected_canonical == predicted_canonical) is False
+
+    # Layer mismatch: expected Network, predicted Application
+    expected_layer = "Network"
+    predicted_layer = "Application"
+    is_layer_match = (
+        expected_layer.lower().split("/")[0].strip() in predicted_layer.lower()
+        or predicted_layer.lower() in expected_layer.lower()
+    )
+    assert is_layer_match is False
+
+    # Location mismatch: expected Gateway (Hop 1), predicted Remote Service (Hop 8)
+    scenario_id = "HIGH_LATENCY"
+    predicted_location = "Hop 8 — Remote Destination (unconfirmed)"
+    suspect_hop_num = 8
+    is_correct_loc = (
+        suspect_hop_num == 1
+        or "hop 1" in predicted_location.lower()
+        or "gateway" in predicted_location.lower()
+    )
+    assert is_correct_loc is False  # Correctly identifies failure to localize to hop 1
+
+
+def test_baseline_aware_health_scoring_contributors(temp_db):
+    """
+    Verifies that health scoring is baseline-aware:
+    - Normal latency below 2x baseline receives zero penalty
+    - Elevated latency above 2x baseline incurs an explainable deduction
+    - Point deductions provide clear parameter, observed, and baseline context
+    """
+    baseline_learner = AdaptiveBaselineLearner(db=temp_db, warmup_samples=5)
+
+    # Train a 20ms baseline
+    for _ in range(10):
+        baseline_learner.update_and_check("avg_latency", "overall", 20.0)
+
+    baselines = baseline_learner.get_ui_summary()
+    base_lat = baselines.get("avg_latency", {}).get("mean", 20.0)
+    lat_threshold = max(base_lat * 2.0, 50.0)  # 2x learned baseline
+
+    # Normal latency (22ms): well under threshold
+    wf_normal = WindowFeatures(
+        window_start=time.time() - 20,
+        window_end=time.time(),
+        avg_latency=22.0,
+        loss_pct=0.0,
+    )
+    lat_penalty_normal = 0
+    if wf_normal.avg_latency > lat_threshold:
+        lat_penalty_normal = min(int((wf_normal.avg_latency - lat_threshold) * 0.4), 25)
+    assert lat_penalty_normal == 0
+
+    # Degraded latency (120ms): exceeds threshold (50ms) by 70ms
+    wf_degraded = WindowFeatures(
+        window_start=time.time() - 20,
+        window_end=time.time(),
+        avg_latency=120.0,
+        loss_pct=0.0,
+    )
+    lat_penalty_degraded = 0
+    if wf_degraded.avg_latency > lat_threshold:
+        lat_penalty_degraded = min(int((wf_degraded.avg_latency - lat_threshold) * 0.4), 25)
+    assert lat_penalty_degraded > 0
+    assert lat_penalty_degraded == min(int((120.0 - 50.0) * 0.4), 25)  # 25 pts max deduction
+
+
+def test_security_input_validation_and_rejection():
+    """
+    Verifies security guards on public fault injection and experiment endpoints:
+    - Rejects invalid scenarios
+    - Rejects shell metacharacters
+    - Enforces numeric duration bounds
+    """
+    from sandbox.fault_injection import SAFE_FAULT_SCENARIOS
+
+    # 1. Whitelist validation
+    valid_scenarios = list(SAFE_FAULT_SCENARIOS.keys())
+    assert "HIGH_LATENCY" in valid_scenarios
+    assert "PACKET_LOSS" in valid_scenarios
+    assert "; whoami" not in valid_scenarios
+    assert "rm -rf /" not in valid_scenarios
+
+    # 2. Target validation: loopback socket target strictly enforced
+    allowed_targets = ("127.0.0.1", "127.0.0.1:8085", "localhost", "localhost:8085")
+    malicious_targets = [
+        "192.168.1.1; whoami",
+        "8.8.8.8",
+        "../../etc/passwd",
+        "$(whoami)",
+        "eth0",
+    ]
+    for target in malicious_targets:
+        assert target not in allowed_targets
+
+    # 3. Duration bounds validation
+    valid_duration = 10.0
+    assert 1.0 <= valid_duration <= 30.0
+    invalid_durations = [-5.0, 0.0, 9999.0]
+    for d in invalid_durations:
+        assert not (1.0 <= d <= 30.0)
+

@@ -4,7 +4,7 @@ Uses Scapy sniffer to detect:
 - TCP Retransmissions
 - Duplicate ACKs (3+ identical ACKs)
 - TCP RST / FIN patterns
-- Frame/packet checksum and CRC errors
+- IP and TCP/UDP software packet checksum errors
 - Protocol distribution counters (TCP, UDP, ICMP, ARP, Other)
 
 Gracefully falls back to active-probe-only mode if sniffing permissions

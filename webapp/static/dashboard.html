@@ -121,17 +121,21 @@
                     <div class="health-hero-card">
                         <div>
                             <div style="font-size: 0.75rem; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">
-                                Network Health Status
+                                Network Health
                             </div>
-                            <div id="heroHealthBadge" class="health-status-badge healthy">
-                                Healthy
-                            </div>
-
                             <div class="health-score-secondary">
                                 <span id="heroHealthScore" class="score-number">--</span>
                                 <span class="score-max">/ 100</span>
                             </div>
-                            <div class="score-context">Compared with your normal network behavior</div>
+                            <div id="heroHealthBadge" class="health-status-badge healthy" style="margin-top: 6px;">
+                                Healthy
+                            </div>
+                            <div id="heroPrimaryConcernContainer" style="font-size: 0.8rem; margin-top: 10px; color: var(--color-text-secondary);">
+                                Primary concern: <strong id="heroPrimaryConcernText" style="color: var(--color-text);">None (Normal Operation)</strong>
+                            </div>
+                            <div id="heroUpdatedContainer" style="font-size: 0.75rem; color: var(--color-text-muted); margin-top: 4px;">
+                                Updated: <span id="heroUpdatedAgoText">Just now</span>
+                            </div>
                         </div>
 
                         <!-- Deductions Breakdown Drawer -->
@@ -171,9 +175,14 @@
                                     </div>
                                 </div>
                             </div>
-                            <button id="btnUnderstandProblem" class="btn btn-secondary btn-sm" style="display: none;">
-                                Understand this problem →
-                            </button>
+                            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                                <button id="btnUnderstandProblem" class="btn btn-secondary btn-sm" style="display: none;">
+                                    Understand this problem →
+                                </button>
+                                <button id="btnViewIssueOnPath" class="btn btn-secondary btn-sm" style="display: none;">
+                                    🗺️ View on Network Path →
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -740,19 +749,26 @@
 
                     <!-- Subtab 3: ML Comparison -->
                     <div id="subtab-ml" class="exp-subtab-content" style="display: none;">
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; margin-bottom: 16px;">
                             <div style="background-color: var(--color-surface-subtle); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 14px;">
                                 <div style="font-size: 0.8rem; font-weight: 700; color: var(--color-text-secondary); text-transform: uppercase;">Evaluation Methodology</div>
-                                <div style="font-size: 0.95rem; font-weight: 700; color: var(--color-text); margin-top: 4px;">GroupShuffleSplit (Zero Temporal Leakage)</div>
+                                <div style="font-size: 0.95rem; font-weight: 700; color: var(--color-text); margin-top: 4px;">GroupShuffleSplit (Zero Leakage)</div>
                                 <p style="font-size: 0.8rem; color: var(--color-text-muted); margin-top: 4px;">
-                                    Consecutive windows from the same incident run are strictly grouped together, preventing train/test data leakage.
+                                    Consecutive windows from the same incident run are strictly grouped, preventing auto-correlated temporal leakage.
                                 </p>
                             </div>
                             <div style="background-color: var(--color-surface-subtle); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 14px;">
-                                <div style="font-size: 0.8rem; font-weight: 700; color: var(--color-text-secondary); text-transform: uppercase;">Deployed Primary Model</div>
-                                <div style="font-size: 0.95rem; font-weight: 700; color: var(--color-success); margin-top: 4px;">CART Decision Tree (max_depth=6)</div>
+                                <div style="font-size: 0.8rem; font-weight: 700; color: var(--color-text-secondary); text-transform: uppercase;">Dataset Source</div>
+                                <div id="mlDatasetSourceTitle" style="font-size: 0.95rem; font-weight: 700; color: var(--color-primary); margin-top: 4px;">Real Fault Telemetry</div>
+                                <p id="mlDatasetSourceDesc" style="font-size: 0.8rem; color: var(--color-text-muted); margin-top: 4px;">
+                                    Empirical socket proxy telemetry (fallback: calibrated synthetic benchmark).
+                                </p>
+                            </div>
+                            <div style="background-color: var(--color-surface-subtle); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 14px;">
+                                <div style="font-size: 0.8rem; font-weight: 700; color: var(--color-text-secondary); text-transform: uppercase;">Deployed vs Benchmark</div>
+                                <div style="font-size: 0.95rem; font-weight: 700; color: var(--color-success); margin-top: 4px;">Decision Tree (Deployed)</div>
                                 <p style="font-size: 0.8rem; color: var(--color-text-muted); margin-top: 4px;">
-                                    100% transparent if-then decision paths exported to <code>data/decision_tree_rules.txt</code> for viva defense.
+                                    White-box if-then rules deployed; Random Forest (100 trees) evaluated only as benchmark upper bound.
                                 </p>
                             </div>
                         </div>
