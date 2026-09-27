@@ -33,9 +33,11 @@ class ProbeScheduler:
         tcp_targets: Optional[List[Dict[str, Any]]] = None,
         dns_targets: Optional[List[Dict[str, str]]] = None,
         http_targets: Optional[List[str]] = None,
+        passive_capture: Optional[Any] = None,
     ):
         self.db = db or get_db()
         self.interval = interval_seconds
+        self.passive_capture = passive_capture
         gateway = _get_default_gateway_ip()
 
         self.ping_targets = ping_targets or [gateway, "8.8.8.8", "1.1.1.1"]
@@ -43,6 +45,7 @@ class ProbeScheduler:
         self.tcp_targets = tcp_targets or [
             {"target": gateway, "port": 80},
             {"target": "8.8.8.8", "port": 53},
+            {"target": "127.0.0.1", "port": 8085},
             {"target": "127.0.0.1", "port": 8000},
         ]
         self.dns_targets = dns_targets or [
@@ -50,7 +53,8 @@ class ProbeScheduler:
             {"hostname": "cloudflare.com", "dns_server": "1.1.1.1"},
         ]
         self.http_targets = http_targets or [
-            "http://127.0.0.1:8000/api/health",
+            "http://127.0.0.1:8085/api/health",
+            "http://127.0.0.1:8000/api/demo-service/health",
         ]
 
         self._running = False
@@ -84,6 +88,8 @@ class ProbeScheduler:
                 )
                 self.db.insert_probe_result(probe_obj)
                 results["pings"].append(res)
+                if self.passive_capture:
+                    self.passive_capture.record_observed_packets("ICMP", 6)
             except Exception as e:
                 logger.error(f"Error running ping probe for {target}: {e}")
 
@@ -116,6 +122,8 @@ class ProbeScheduler:
                 ]
                 self.db.insert_hop_data_batch(hop_objs)
                 results["traceroutes"].append(tr_res)
+                if self.passive_capture:
+                    self.passive_capture.record_observed_packets("ICMP", max(len(hop_objs) * 2, 4))
             except Exception as e:
                 logger.error(f"Error running traceroute probe for {target}: {e}")
 
@@ -136,6 +144,8 @@ class ProbeScheduler:
                 )
                 self.db.insert_probe_result(probe_obj)
                 results["tcp_connects"].append(tcp_res)
+                if self.passive_capture:
+                    self.passive_capture.record_observed_packets("TCP", 4)
             except Exception as e:
                 logger.error(f"Error running TCP probe for {target}:{port}: {e}")
 
@@ -156,6 +166,8 @@ class ProbeScheduler:
                 )
                 self.db.insert_probe_result(probe_obj)
                 results["dns"].append(dns_res)
+                if self.passive_capture:
+                    self.passive_capture.record_observed_packets("UDP", 2)
             except Exception as e:
                 logger.error(f"Error running DNS probe for {hostname}: {e}")
 
@@ -174,6 +186,8 @@ class ProbeScheduler:
                 )
                 self.db.insert_probe_result(probe_obj)
                 results["http"].append(http_res)
+                if self.passive_capture:
+                    self.passive_capture.record_observed_packets("TCP", 6)
             except Exception as e:
                 logger.error(f"Error running HTTP probe for {url}: {e}")
 

@@ -25,6 +25,8 @@ logger = logging.getLogger("network_autopsy.active_probes")
 try:
     from scapy.all import IP, ICMP, UDP, TCP, DNS, DNSQR, sr1, sr, conf
     conf.verb = 0
+    logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
+    logging.getLogger("scapy.loading").setLevel(logging.ERROR)
     SCAPY_AVAILABLE = True
 except Exception as e:
     SCAPY_AVAILABLE = False
@@ -139,7 +141,10 @@ def traceroute_probe(target: str, max_hops: int = 15, timeout: float = 1.2, prob
     hops: List[Dict[str, Any]] = []
     scapy_success = False
 
-    if SCAPY_AVAILABLE:
+    # Only use Scapy raw sockets for traceroute if running on Linux or if Windows has pcap available
+    can_use_scapy_trace = SCAPY_AVAILABLE and (platform.system() != "Windows" or getattr(conf, 'use_pcap', False))
+
+    if can_use_scapy_trace:
         try:
             for ttl in range(1, max_hops + 1):
                 hop_ip = "*"

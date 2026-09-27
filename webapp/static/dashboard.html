@@ -3,47 +3,49 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Network Autopsy — Real-Time Telemetry & Fault Diagnosis</title>
+    <title>Network Autopsy — Network Failure Diagnosis & Root-Cause Localization Platform</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
     <!-- Chart.js CDN -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
     <div class="dashboard-wrapper">
-        <!-- Header -->
+        <!-- Header Bar -->
         <header class="header-bar">
             <div class="brand-area">
                 <div class="brand-logo">📡</div>
                 <div class="brand-text">
                     <h1>NETWORK AUTOPSY</h1>
-                    <p>Multi-Parameter Failure Diagnosis & Root-Cause Localization Engine</p>
+                    <p>Multi-Parameter Network Failure Diagnosis & Root-Cause Localization Platform</p>
                 </div>
             </div>
 
+            <!-- Header Status Indicators -->
+            <div class="header-status-group">
+                <div id="liveIndicatorPill" class="live-pill">
+                    <span class="pulse-dot"></span>
+                    <span id="liveStatusText">LIVE</span>
+                </div>
+                <span id="lblLastUpdated" class="badge-pill">LAST: --:--:--</span>
+                <span id="lblDataAge" class="badge-pill">AGE: 0.0s</span>
+                <span id="lblTelemetrySource" class="badge-pill" style="color: #60a5fa;">LIVE NETWORK</span>
+            </div>
+
+            <!-- Header Action Controls -->
             <div class="controls-bar">
-                <button id="btnRunDiagnostic" class="btn btn-primary" title="Trigger full probe and diagnostic cycle now">
-                    ⚡ Run Diagnostic Now
-                </button>
-                
-                <select id="selectFaultType" class="select-control">
-                    <option value="LOCAL_GATEWAY_CONGESTION">Gateway / Wi-Fi Congestion</option>
-                    <option value="LATENCY_JITTER">Latency Spike (+150ms)</option>
-                    <option value="PACKET_LOSS">Packet Loss (30%)</option>
-                    <option value="DNS_FAILURE">DNS Resolver Failure</option>
-                    <option value="HTTP_SERVICE_DOWN">HTTP 503 Web Crash</option>
-                    <option value="ROUTE_FLAP">Route Flap / Path Shift</option>
-                    <option value="BANDWIDTH_THROTTLE">Bandwidth Throttle (128k)</option>
-                </select>
-
-                <button id="btnInjectFault" class="btn btn-danger" title="Inject selected test fault (Demo Mode)">
-                    🧪 Inject Test Fault
+                <button id="btnOpenEnv" class="btn btn-outline" title="View environment capabilities and subsystem diagnostics">
+                    🖥️ Diagnostics
                 </button>
 
-                <button id="btnClearFaults" class="btn btn-outline" title="Clear all injected faults">
-                    🔄 Clear Faults
+                <button id="btnRunDiagnostic" class="btn btn-primary" title="Trigger full active probe and diagnosis cycle">
+                    ⚡ Run Diagnostic
+                </button>
+
+                <button id="btnClearFaults" class="btn btn-outline" title="Safely clear all injected faults">
+                    🔄 Reset Baseline
                 </button>
             </div>
         </header>
@@ -51,55 +53,113 @@
         <!-- Dynamic Status Banner -->
         <div id="statusBanner" class="status-banner"></div>
 
-        <!-- Top Section: Health Score & Telemetry Tiles -->
+        <!-- Section 1: Health Grade & Quick Telemetry Tiles -->
         <section class="top-grid">
-            <!-- Health Badge Card -->
+            <!-- Explainable Health Grade Card -->
             <div class="card health-badge-card">
                 <div id="healthGradeCircle" class="grade-circle A">A</div>
                 <div id="healthDesc" class="health-desc">Network Optimal</div>
-                <div id="healthSub" class="health-sub">Score: 98/100 | 0 active incidents</div>
+                <div id="healthSub" class="health-sub">Score: 100/100 | 0 ongoing incidents</div>
+                <button id="btnToggleDeductions" class="deductions-toggle">View Deductions Breakdown ▾</button>
+                <div id="deductionsDrawer" class="deductions-drawer">
+                    <div id="deductionsList">
+                        <!-- Populated dynamically via dashboard.js -->
+                    </div>
+                </div>
             </div>
 
-            <!-- Quick Metrics Row -->
+            <!-- Real-Time Metrics & Baseline Comparison -->
             <div class="metrics-row">
                 <div class="metric-tile">
                     <span class="metric-label">Avg Latency</span>
                     <span id="valLatency" class="metric-value">-- ms</span>
-                    <span class="metric-sub">ICMP RTT</span>
+                    <div class="metric-sub">
+                        <span>Base: <span id="baseLatency">--</span></span>
+                        <span id="devLatency" class="dev-badge normal">+0%</span>
+                    </div>
                 </div>
                 <div class="metric-tile">
                     <span class="metric-label">Packet Loss</span>
                     <span id="valLoss" class="metric-value" style="color: #34d399;">0.0 %</span>
-                    <span class="metric-sub">End-to-end</span>
+                    <div class="metric-sub">
+                        <span>Base: 0.0%</span>
+                        <span id="devLoss" class="dev-badge normal">Normal</span>
+                    </div>
                 </div>
                 <div class="metric-tile">
-                    <span class="metric-label">Jitter (σ)</span>
+                    <span class="metric-label">RTT Jitter (σ)</span>
                     <span id="valJitter" class="metric-value">-- ms</span>
-                    <span class="metric-sub">RTT Variation</span>
+                    <div class="metric-sub">
+                        <span>RFC 3393</span>
+                    </div>
                 </div>
                 <div class="metric-tile">
-                    <span class="metric-label">DNS Time</span>
+                    <span class="metric-label">DNS Resolution</span>
                     <span id="valDns" class="metric-value">-- ms</span>
-                    <span class="metric-sub">Resolution RTT</span>
+                    <div class="metric-sub">
+                        <span id="valDnsLoss">0% loss</span>
+                    </div>
                 </div>
                 <div class="metric-tile">
                     <span class="metric-label">TCP Retrans</span>
                     <span id="valRetrans" class="metric-value">0</span>
-                    <span class="metric-sub">Passive sniffer</span>
+                    <div class="metric-sub">
+                        <span id="valDupAck">0 dup ACKs</span>
+                    </div>
                 </div>
                 <div class="metric-tile">
-                    <span class="metric-label">HTTP Health</span>
+                    <span class="metric-label">HTTP Web Status</span>
                     <span id="valHttpStatus" class="metric-value" style="color: #60a5fa;">200</span>
-                    <span class="metric-sub">App status</span>
+                    <div class="metric-sub">
+                        <span id="valHttpTime">-- ms</span>
+                    </div>
                 </div>
             </div>
         </section>
 
-        <!-- Charts Grid -->
+        <!-- Section 2: Active Incident Banner (Shown when incident ongoing) -->
+        <div id="activeIncidentBanner" class="active-incident-banner" style="display: none;">
+            <div class="incident-headline">
+                <div class="incident-pulse-icon">🚨</div>
+                <div>
+                    <div style="font-size: 0.75rem; text-transform: uppercase; font-weight: 700; color: #f87171; letter-spacing: 0.05em;">
+                        ACTIVE INCIDENT DETECTED — <span id="incStatusText">ONGOING</span> (<span id="incDurationText">0s</span>)
+                    </div>
+                    <div id="incCauseText" style="font-size: 1.15rem; font-weight: 700; color: #ffffff;">
+                        Likely Gateway Congestion
+                    </div>
+                    <div id="incMetaText" style="font-size: 0.8rem; color: #cbd5e1; margin-top: 0.2rem;">
+                        Layer: Network | Location: Hop 1 (192.168.1.1) | Confidence: 86%
+                    </div>
+                </div>
+            </div>
+            <button id="btnViewActiveIncident" class="btn btn-primary">
+                🔬 Inspect Autopsy Report
+            </button>
+        </div>
+
+        <!-- Section 3: Dynamic Network Path Topology (Interactive Hop View) -->
+        <div class="card" style="margin-bottom: 1.25rem;">
+            <div class="card-title">
+                <span>🗺️ Dynamic Network Path & Hop-Level Health (Target: 8.8.8.8)</span>
+                <span id="hopStatusBadge" class="badge-pill" style="color: #34d399;">PATH HEALTHY</span>
+            </div>
+            <div class="topology-container">
+                <div id="topologyPath" class="topology-path">
+                    <!-- Populated dynamically via dashboard.js -->
+                </div>
+            </div>
+            <div style="font-size: 0.75rem; color: var(--text-muted); display: flex; justify-content: space-between;">
+                <span>Click any hop node to inspect real-time RTT deviation, baseline stats, and corroborating evidence.</span>
+                <span>Hop Status: <strong style="color: #10b981;">HEALTHY</strong> | <strong style="color: #f59e0b;">SUSPECTED</strong> | <strong style="color: #ef4444;">LIKELY_FAULT</strong> | <strong style="color: #94a3b8;">UNCONFIRMED</strong></span>
+            </div>
+        </div>
+
+        <!-- Section 4: Telemetry Timeline Chart & Protocol Distribution -->
         <section class="charts-grid">
             <div class="card">
                 <div class="card-title">
-                    <span>📈 Telemetry Timeline (Latency & Packet Loss)</span>
+                    <span>📈 Telemetry Timeline (Latency vs Baseline Band & Packet Loss)</span>
                     <span style="font-size: 0.75rem; color: #9ca3af; font-family: monospace;">20s Rolling Windows</span>
                 </div>
                 <div class="chart-container">
@@ -110,60 +170,284 @@
             <div class="card">
                 <div class="card-title">
                     <span>🍰 Protocol Distribution</span>
-                    <span style="font-size: 0.75rem; color: #9ca3af;">Passive Capture</span>
+                    <span id="captureModeText" style="font-size: 0.725rem; color: #9ca3af;">Passive Capture</span>
                 </div>
                 <div class="chart-container">
                     <canvas id="protocolChart"></canvas>
                 </div>
+                <div id="protocolNotice" style="font-size: 0.7rem; color: var(--text-muted); text-align: center; margin-top: 0.5rem;">
+                    Passive capture active in raw socket mode.
+                </div>
             </div>
         </section>
 
-        <!-- Path Topology & Incidents Grid -->
-        <section class="charts-grid">
-            <!-- Topology / Traceroute Path -->
-            <div class="card">
-                <div class="card-title">
-                    <span>🗺️ Network Path & Hop-Level Health (8.8.8.8)</span>
-                    <span id="hopConfidenceBadge" class="confidence-badge High">Path Healthy</span>
+        <!-- Section 5: Validation Lab (Controlled Fault Injection Sandbox) -->
+        <section id="validation" class="validation-lab-card">
+            <div class="card-title">
+                <div>
+                    <span style="font-size: 1.1rem; color: #f8fafc;">🔬 Controlled Fault Validation Lab</span>
+                    <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.2rem;">
+                        Inject controlled network faults to validate the diagnosis pipeline end-to-end with verified ground truth.
+                    </p>
                 </div>
-                <table class="hop-table">
-                    <thead>
-                        <tr>
-                            <th>Hop</th>
-                            <th>IP Address</th>
-                            <th>RTT</th>
-                            <th>Loss %</th>
-                        </tr>
-                    </thead>
-                    <tbody id="hopsTableBody">
-                        <tr>
-                            <td>#1</td>
-                            <td>192.168.1.1 (Gateway)</td>
-                            <td>2.1 ms</td>
-                            <td>0.0%</td>
-                        </tr>
-                    </tbody>
-                </table>
+                <span class="badge-pill" style="color: #34d399;">SAFE MODE ENABLED</span>
             </div>
 
-            <!-- Incident Timeline -->
-            <div class="card">
+            <div class="lab-grid">
+                <!-- Experiment Controls -->
+                <div class="lab-panel">
+                    <div class="control-field">
+                        <label class="control-label">Fault Scenario</label>
+                        <select id="labSelectScenario" class="select-control" style="width: 100%;">
+                            <!-- Populated dynamically via /api/validation/scenarios -->
+                        </select>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                        <div class="control-field">
+                            <label class="control-label">Target</label>
+                            <input id="labTarget" type="text" class="select-control" style="width: 100%;" value="127.0.0.1:8085" readonly>
+                        </div>
+                        <div class="control-field">
+                            <label class="control-label">Intensity</label>
+                            <input id="labIntensity" type="number" class="select-control" style="width: 100%;" value="25.0">
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                        <div class="control-field">
+                            <label class="control-label">Duration (sec)</label>
+                            <input id="labDuration" type="number" class="select-control" style="width: 100%;" value="8" min="3" max="30">
+                        </div>
+                        <div class="control-field">
+                            <label class="control-label">Execution Mode</label>
+                            <select id="labMode" class="select-control" style="width: 100%;">
+                                <option value="real">Real Network Sockets</option>
+                                <option value="synthetic">Synthetic Unit Benchmark</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; gap: 0.75rem; margin-top: 0.5rem;">
+                        <button id="btnStartExperiment" class="btn btn-danger" style="flex: 1;">
+                            🧪 Run Experiment Trial
+                        </button>
+                        <button id="btnLabClear" class="btn btn-outline">
+                            Clear
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Live Trial Tracker & Ground Truth Verification -->
+                <div class="lab-panel" style="background: #090e1a; border: 1px solid var(--border-color); border-radius: 10px; padding: 1.25rem;">
+                    <div style="font-size: 0.8rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; margin-bottom: 0.75rem;">
+                        End-to-End Experiment Progression
+                    </div>
+
+                    <div class="trial-stepper">
+                        <div id="step1" class="step-node"><div class="step-dot"></div><span>1. Injected</span></div>
+                        <div id="step2" class="step-node"><div class="step-dot"></div><span>2. Degraded</span></div>
+                        <div id="step3" class="step-node"><div class="step-dot"></div><span>3. Probed</span></div>
+                        <div id="step4" class="step-node"><div class="step-dot"></div><span>4. Diagnosed</span></div>
+                        <div id="step5" class="step-node"><div class="step-dot"></div><span>5. Recovered</span></div>
+                    </div>
+
+                    <div id="experimentVerdictBox" style="background: #111827; border: 1px solid #1f2937; border-radius: 8px; padding: 1rem; margin-top: 0.75rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                            <span style="font-size: 0.75rem; color: #9ca3af; text-transform: uppercase; font-weight: 600;">Latest Ground Truth Trial</span>
+                            <span id="verdictBadge" class="badge-pill" style="color: #34d399;">READY</span>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; font-size: 0.8rem;">
+                            <div>
+                                <span style="color: #94a3b8;">Expected Cause:</span>
+                                <div id="expGroundTruth" style="color: #f8fafc; font-weight: 600;">--</div>
+                            </div>
+                            <div>
+                                <span style="color: #94a3b8;">Predicted Cause:</span>
+                                <div id="expPredicted" style="color: #60a5fa; font-weight: 600;">--</div>
+                            </div>
+                            <div>
+                                <span style="color: #94a3b8;">Detection Latency:</span>
+                                <div id="expDetectLat" style="color: #f8fafc; font-family: monospace;">--</div>
+                            </div>
+                            <div>
+                                <span style="color: #94a3b8;">Recovery Verified:</span>
+                                <div id="expRecovery" style="color: #34d399; font-family: monospace;">--</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 6: Validation Results & Academic Comparison Analytics -->
+        <section class="card" style="margin-bottom: 2rem;">
+            <div class="tabs-nav">
+                <button class="tab-btn active" data-tab="tabRealExp">🔬 Real Network Experiments (Empirical)</button>
+                <button class="tab-btn" data-tab="tabSynthetic">🧪 Synthetic Benchmark (Unit Tests)</button>
+                <button class="tab-btn" data-tab="tabML">🤖 ML Classifier Comparison (5 Models)</button>
+            </div>
+
+            <!-- Tab 1: Real Experiments -->
+            <div id="tabRealExp" class="tab-content active">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem; margin-bottom: 1rem;">
+                    <div class="metric-tile" style="padding: 0.75rem;">
+                        <span class="metric-label">Total Real Trials</span>
+                        <span id="realTotalTrials" class="metric-value">0</span>
+                    </div>
+                    <div class="metric-tile" style="padding: 0.75rem;">
+                        <span class="metric-label">Diagnosis Accuracy</span>
+                        <span id="realDiagAcc" class="metric-value" style="color: #60a5fa;">--%</span>
+                    </div>
+                    <div class="metric-tile" style="padding: 0.75rem;">
+                        <span class="metric-label">Detection Rate</span>
+                        <span id="realDetectRate" class="metric-value">--%</span>
+                    </div>
+                    <div class="metric-tile" style="padding: 0.75rem;">
+                        <span class="metric-label">Recovery Accuracy</span>
+                        <span id="realRecoveryAcc" class="metric-value" style="color: #34d399;">--%</span>
+                    </div>
+                    <div class="metric-tile" style="padding: 0.75rem;">
+                        <span class="metric-label">Mean Detection Time</span>
+                        <span id="realMeanLat" class="metric-value">--s</span>
+                    </div>
+                    <div class="metric-tile" style="padding: 0.75rem;">
+                        <span class="metric-label">Mean Recovery Time</span>
+                        <span id="realMeanRec" class="metric-value">--s</span>
+                    </div>
+                </div>
+
                 <div class="card-title">
-                    <span>🔬 Autopsy Incidents Timeline</span>
-                    <span style="font-size: 0.75rem; color: #9ca3af;">Click item for full report</span>
+                    <span>Per-Class Empirical Metrics (Degraded OS Sockets)</span>
                 </div>
-                <div id="incidentsList" style="max-height: 260px; overflow-y: auto;">
-                    <div style="padding: 1rem; color: #9ca3af; text-align: center;">Loading diagnostic incidents...</div>
+                <div style="overflow-x: auto;">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Fault Scenario</th>
+                                <th>Precision</th>
+                                <th>Recall</th>
+                                <th>F1-Score</th>
+                                <th>Empirical Trials</th>
+                            </tr>
+                        </thead>
+                        <tbody id="realMetricsTableBody">
+                            <tr><td colspan="5" style="text-align: center; color: var(--text-muted);">No trials recorded yet. Run trials via the Validation Lab above.</td></tr>
+                        </tbody>
+                    </table>
                 </div>
+            </div>
+
+            <!-- Tab 2: Synthetic Benchmark -->
+            <div id="tabSynthetic" class="tab-content">
+                <div style="padding: 0.75rem; background: rgba(59, 130, 246, 0.08); border-left: 4px solid #3b82f6; border-radius: 4px; margin-bottom: 1rem; font-size: 0.8rem; color: #93c5fd;">
+                    <strong>Notice:</strong> This tab presents algorithmic unit-test validation on calibrated feature distributions.
+                    It is strictly separated from Real Network Experiments to maintain 100% academic integrity.
+                </div>
+                <div style="overflow-x: auto;">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Fault Class</th>
+                                <th>Precision</th>
+                                <th>Recall</th>
+                                <th>F1-Score</th>
+                                <th>Synthetic Trials</th>
+                            </tr>
+                        </thead>
+                        <tbody id="syntheticMetricsTableBody">
+                            <!-- Populated dynamically via dashboard.js -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Tab 3: ML Comparison -->
+            <div id="tabML" class="tab-content">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                    <div style="background: #111827; border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem;">
+                        <div style="font-size: 0.8rem; font-weight: 700; color: #94a3b8; text-transform: uppercase;">Evaluation Methodology</div>
+                        <div id="mlSplitMethod" style="font-size: 0.85rem; color: #f8fafc; margin-top: 0.35rem; font-weight: 600;">
+                            GroupShuffleSplit (Experiment-Run Level - Zero Data Leakage)
+                        </div>
+                        <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem;">
+                            Auto-correlated rolling time windows from the same incident are strictly grouped together, preventing train/test data leakage.
+                        </p>
+                    </div>
+
+                    <div style="background: #111827; border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem;">
+                        <div style="font-size: 0.8rem; font-weight: 700; color: #94a3b8; text-transform: uppercase;">White-Box Interpretability</div>
+                        <div style="font-size: 0.85rem; color: #34d399; margin-top: 0.35rem; font-weight: 600;">
+                            CART Decision Tree (max_depth=6)
+                        </div>
+                        <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem;">
+                            100% transparent if-then decision paths exported to <code>data/decision_tree_rules.txt</code> for viva defense.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="card-title">
+                    <span>Diagnostic Models Performance Comparison</span>
+                </div>
+                <div style="overflow-x: auto;">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Diagnostic Model</th>
+                                <th>Role in Architecture</th>
+                                <th>Accuracy</th>
+                                <th>F1-Score</th>
+                                <th>Key Characteristic</th>
+                            </tr>
+                        </thead>
+                        <tbody id="mlModelsTableBody">
+                            <!-- Populated dynamically via dashboard.js -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 7: Autopsy Incident History List -->
+        <section class="card">
+            <div class="card-title">
+                <span>🔬 Historical Incident Log (Post-Mortem Autopsy Archive)</span>
+                <span style="font-size: 0.75rem; color: #9ca3af;">Click any record to inspect full autopsy report</span>
+            </div>
+            <div id="incidentsList" style="max-height: 280px; overflow-y: auto;">
+                <div style="padding: 1rem; color: #9ca3af; text-align: center;">Loading diagnostic incidents...</div>
             </div>
         </section>
     </div>
 
-    <!-- Incident Post-Mortem Modal -->
+    <!-- Incident Post-Mortem Report Modal -->
     <div id="incidentModal" class="modal-overlay">
         <div class="modal-content">
             <button id="modalCloseBtn" class="modal-close">&times;</button>
             <div id="modalBody">
+                <!-- Populated dynamically via dashboard.js -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Hop Telemetry Inspection Modal -->
+    <div id="hopModal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 600px;">
+            <button id="hopModalCloseBtn" class="modal-close">&times;</button>
+            <div id="hopModalBody">
+                <!-- Populated dynamically via dashboard.js -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Environment Diagnostics Modal -->
+    <div id="envModal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 700px;">
+            <button id="envModalCloseBtn" class="modal-close">&times;</button>
+            <div class="card-title">
+                <span>🖥️ System Diagnostics & Environment State</span>
+            </div>
+            <div id="envModalBody" style="font-size: 0.85rem;">
                 <!-- Populated dynamically via dashboard.js -->
             </div>
         </div>

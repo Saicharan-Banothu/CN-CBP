@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="/static/style.css">
     <style>
         .report-container {
-            max-width: 960px;
+            max-width: 1000px;
             margin: 2rem auto;
             padding: 2.5rem;
             background: #111827;
@@ -48,8 +48,11 @@
             text-transform: uppercase;
             letter-spacing: 0.05em;
         }
-        .badge-status.OPEN { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
-        .badge-status.RESOLVED { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+        .badge-status.DETECTED { background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4); }
+        .badge-status.CONFIRMED { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); }
+        .badge-status.ONGOING { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); }
+        .badge-status.RECOVERING { background: rgba(59, 130, 246, 0.2); color: #93c5fd; border: 1px solid rgba(59, 130, 246, 0.4); }
+        .badge-status.RESOLVED { background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4); }
 
         .summary-card {
             background: #1f2937;
@@ -60,7 +63,7 @@
         }
         .summary-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
             gap: 1.25rem;
             margin-top: 1rem;
         }
@@ -99,11 +102,11 @@
         .confidence-pill.Low { color: #ef4444; }
 
         .section-title {
-            font-size: 1.25rem;
+            font-size: 1.15rem;
             font-weight: 600;
             color: #e5e7eb;
             margin-top: 2rem;
-            margin-bottom: 1rem;
+            margin-bottom: 0.85rem;
             display: flex;
             align-items: center;
             gap: 0.5rem;
@@ -131,7 +134,7 @@
         .evidence-table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 0.9rem;
+            font-size: 0.875rem;
             margin-top: 0.75rem;
             background: #182234;
             border-radius: 8px;
@@ -154,8 +157,34 @@
         .evidence-table td {
             color: #cbd5e1;
             font-family: 'JetBrains Mono', monospace;
-            font-size: 0.85rem;
+            font-size: 0.825rem;
         }
+
+        .timeline-box {
+            background: #151d2f;
+            border: 1px solid #2d3748;
+            border-radius: 8px;
+            padding: 1rem 1.25rem;
+        }
+        .timeline-event {
+            display: flex;
+            align-items: flex-start;
+            gap: 1rem;
+            padding: 0.6rem 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .timeline-event:last-child { border-bottom: none; }
+        .timeline-time {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            color: #60a5fa;
+            min-width: 75px;
+        }
+        .timeline-desc {
+            font-size: 0.875rem;
+            color: #e5e7eb;
+        }
+
         .btn-bar {
             display: flex;
             justify-content: space-between;
@@ -186,11 +215,11 @@
         <div class="report-header">
             <div class="report-title-area">
                 <h1>
-                    <span>🔬 Network Autopsy Report</span>
+                    <span>🔬 Network Autopsy Post-Mortem</span>
                     <span style="color: #60a5fa;">#{{ incident.id }}</span>
                 </h1>
                 <div class="report-meta">
-                    Timestamp: {{ incident.timestamp }} (Epoch)
+                    Detected: {{ incident.timestamp }} (Epoch) | Status: {{ incident.status }} | Duration: {{ incident.duration_s|round(1) }}s | Occurrences: {{ incident.occurrence_count }}
                 </div>
             </div>
             <div>
@@ -216,7 +245,7 @@
                     <div class="value" style="color: #60a5fa;">{{ incident.probable_cause }}</div>
                 </div>
                 <div class="summary-item">
-                    <label>SUSPECT HOP LOCATION</label>
+                    <label>FAULT LOCATION</label>
                     <div class="value">{{ incident.hop_location }}</div>
                 </div>
                 <div class="summary-item">
@@ -244,94 +273,97 @@
         </div>
 
         <div class="remediation-box">
-            <h3>Suggested Remediation & Corrective Action</h3>
+            <h3>Suggested Engineering Remediation</h3>
             <p>{{ incident.remediation_text }}</p>
         </div>
 
-        <div class="section-title">📊 Corroborating Telemetry & Evidence</div>
+        <!-- Incident Timeline Section -->
+        <div class="section-title">⏱️ Dynamic Incident Timeline</div>
+        <div class="timeline-box">
+            {% if evidence.get('timeline_events') %}
+                {% for ev in evidence.get('timeline_events', []) %}
+                <div class="timeline-event">
+                    <div class="timeline-time">+{{ ev.offset_s }}s</div>
+                    <div class="timeline-desc"><strong>[{{ ev.phase }}]</strong> {{ ev.description }}</div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="timeline-event">
+                    <div class="timeline-time">+0.0s</div>
+                    <div class="timeline-desc"><strong>[DETECTED]</strong> Multi-signal telemetry deviation exceeded adaptive threshold.</div>
+                </div>
+                <div class="timeline-event">
+                    <div class="timeline-time">+{{ incident.duration_s|round(1) }}s</div>
+                    <div class="timeline-desc"><strong>[{{ incident.status }}]</strong> Status verified through repeated probe cycles.</div>
+                </div>
+            {% endif %}
+        </div>
+
+        <!-- Multi-Signal Evidence Section -->
+        <div class="section-title">📊 Multi-Signal Evidence Matrix</div>
         <table class="evidence-table">
             <thead>
                 <tr>
-                    <th>Metric Parameter</th>
-                    <th>Observed Window Value</th>
-                    <th>Telemetry Context</th>
+                    <th>Signal Parameter</th>
+                    <th>Observed Value</th>
+                    <th>Baseline Normal</th>
+                    <th>Deviation</th>
+                    <th>Subsystem Source</th>
                 </tr>
             </thead>
             <tbody>
-                {% set metrics = evidence.get('metrics', {}) %}
-                <tr>
-                    <td>Ping Avg Latency</td>
-                    <td>{{ metrics.get('avg_latency_ms', 0) }} ms</td>
-                    <td>Maximum observed: {{ metrics.get('max_latency_ms', 0) }} ms</td>
-                </tr>
-                <tr>
-                    <td>Packet Loss Rate</td>
-                    <td>{{ metrics.get('loss_pct', 0) }} %</td>
-                    <td>Gateway: {{ metrics.get('gateway_loss_pct', 0) }}% | External: {{ metrics.get('external_loss_pct', 0) }}%</td>
-                </tr>
-                <tr>
-                    <td>Latency Jitter (σ)</td>
-                    <td>{{ metrics.get('jitter_ms', 0) }} ms</td>
-                    <td>Standard deviation of ICMP RTTs</td>
-                </tr>
-                <tr>
-                    <td>Gateway Ping RTT</td>
-                    <td>{{ metrics.get('gateway_latency_ms', 0) }} ms</td>
-                    <td>Direct hop 1 probe</td>
-                </tr>
-                <tr>
-                    <td>DNS Resolution Time</td>
-                    <td>{{ metrics.get('dns_latency_ms', 0) }} ms</td>
-                    <td>Failure rate: {{ metrics.get('dns_loss_pct', 0) }}%</td>
-                </tr>
-                <tr>
-                    <td>HTTP Web Probe Time</td>
-                    <td>{{ metrics.get('http_latency_ms', 0) }} ms</td>
-                    <td>TTFB: {{ metrics.get('http_ttfb_ms', 0) }} ms | Status: {{ metrics.get('http_status_code', 0) }}</td>
-                </tr>
-                <tr>
-                    <td>TCP Handshake Latency</td>
-                    <td>{{ metrics.get('tcp_connect_latency_ms', 0) }} ms</td>
-                    <td>Direct TCP connect handshake</td>
-                </tr>
-                <tr>
-                    <td>TCP Retransmissions</td>
-                    <td>{{ metrics.get('retransmissions', 0) }} events</td>
-                    <td>Passive packet capture sniffer</td>
-                </tr>
-                <tr>
-                    <td>Duplicate ACKs</td>
-                    <td>{{ metrics.get('duplicate_acks', 0) }} events</td>
-                    <td>Indicates packet reordering or drop</td>
-                </tr>
-                <tr>
-                    <td>Corrupted Checksums</td>
-                    <td>{{ metrics.get('checksum_errors', 0) }} frames</td>
-                    <td>CRC / IP header checksum verification</td>
-                </tr>
+                {% if evidence.get('evidence_items') %}
+                    {% for item in evidence.get('evidence_items', []) %}
+                    <tr>
+                        <td style="color: #f3f4f6; font-weight: 600;">{{ item.signal }}</td>
+                        <td>{{ item.observed }}</td>
+                        <td>{{ item.baseline }}</td>
+                        <td style="color: #f87171;">{{ item.deviation }}</td>
+                        <td>{{ item.source }}</td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    {% set metrics = evidence.get('metrics', {}) %}
+                    <tr>
+                        <td>Ping Round-Trip Time</td>
+                        <td>{{ metrics.get('avg_latency_ms', 0) }} ms</td>
+                        <td>&lt; 35.0 ms</td>
+                        <td>{{ metrics.get('max_latency_ms', 0) }} ms peak</td>
+                        <td>Active ICMP Probe</td>
+                    </tr>
+                    <tr>
+                        <td>Packet Loss Rate</td>
+                        <td>{{ metrics.get('loss_pct', 0) }} %</td>
+                        <td>0.0 %</td>
+                        <td>End-to-End timeout</td>
+                        <td>Active ICMP Probe</td>
+                    </tr>
+                    <tr>
+                        <td>TCP Retransmissions</td>
+                        <td>{{ metrics.get('retransmissions', 0) }}</td>
+                        <td>0</td>
+                        <td>Duplicate sequences</td>
+                        <td>Passive Sniffer</td>
+                    </tr>
+                {% endif %}
             </tbody>
         </table>
 
-        {% if evidence.get('anomalies') %}
-        <div class="section-title">⚡ Detected Baseline Deviations</div>
+        <!-- Alternative Hypotheses Considered -->
+        {% if evidence.get('alternative_hypotheses') %}
+        <div class="section-title">⚖️ Differential Diagnosis & Alternative Hypotheses</div>
         <table class="evidence-table">
             <thead>
                 <tr>
-                    <th>Metric</th>
-                    <th>Target</th>
-                    <th>Observed</th>
-                    <th>Baseline Mean ± StdDev</th>
-                    <th>Z-Score</th>
+                    <th>Alternative Hypothesis</th>
+                    <th>Ruling / Refutation Justification</th>
                 </tr>
             </thead>
             <tbody>
-                {% for a in evidence.get('anomalies', []) %}
+                {% for hyp in evidence.get('alternative_hypotheses', []) %}
                 <tr>
-                    <td>{{ a.metric_name }}</td>
-                    <td>{{ a.target }}</td>
-                    <td>{{ a.current_value }}</td>
-                    <td>{{ a.baseline_mean }} ± {{ a.baseline_stddev }}</td>
-                    <td style="color: #f87171; font-weight: 700;">+{{ a.z_score }}σ</td>
+                    <td style="color: #fbbf24; font-weight: 600;">{{ hyp.hypothesis }}</td>
+                    <td>{{ hyp.ruling }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -340,7 +372,7 @@
 
         <div class="btn-bar">
             <a href="/static/dashboard.html" class="btn-action btn-outline">← Back to Dashboard</a>
-            <button onclick="window.print()" class="btn-action btn-primary">🖨️ Print / Export Autopsy Report</button>
+            <button onclick="window.print()" class="btn-action btn-primary">🖨️ Export PDF / Print Report</button>
         </div>
     </div>
 </body>

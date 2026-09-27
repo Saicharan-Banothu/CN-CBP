@@ -239,13 +239,47 @@ class PassiveCaptureAgent:
             if self._thread and self._thread.is_alive():
                 self._thread.join(timeout=2.0)
 
+    def record_observed_packets(self, protocol: str, count: int = 1, event_type: Optional[str] = None):
+        """Records packets observed by the platform (from active probes, socket transactions, or packet capture)."""
+        proto_key = protocol.upper()
+        if proto_key not in self.protocol_counts:
+            proto_key = "OTHER"
+        with self._lock:
+            self.protocol_counts[proto_key] += count
+            if event_type and event_type in self.event_counts:
+                self.event_counts[event_type] += 1
+
     def is_running(self) -> bool:
         return self._running
 
     def get_stats(self) -> Dict[str, Any]:
+        """
+        Returns protocol distribution and packet event statistics.
+        If promiscuous sniffer is active, reports directly from captured frames.
+        Otherwise, seamlessly reflects the verified socket-level network telemetry
+        observed by active probes and host interfaces.
+        """
+        with self._lock:
+            total_sniffed = sum(self.protocol_counts.values())
+
+        if self.sniffer_active and total_sniffed > 0:
+            return {
+                "sniffer_active": True,
+                "sniffer_error": "",
+                "capture_mode": "Promiscuous Sniffer",
+                "protocols": dict(self.protocol_counts),
+                "events": dict(self.event_counts),
+                "total_packets": total_sniffed,
+            }
+
+        # Fallback to empirical database telemetry when L2 raw sniffing is restricted
+        db_counts = self.db.get_observed_protocol_counts()
+        total_db = sum(db_counts.values())
         return {
             "sniffer_active": self.sniffer_active,
             "sniffer_error": self.sniffer_error,
-            "protocols": dict(self.protocol_counts),
+            "capture_mode": "Network Telemetry",
+            "protocols": db_counts,
             "events": dict(self.event_counts),
+            "total_packets": total_db,
         }

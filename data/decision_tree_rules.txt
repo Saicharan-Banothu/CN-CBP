@@ -1,29 +1,21 @@
 === NETWORK AUTOPSY - DEPLOYED DECISION TREE RULES ===
-Max Depth: 6
+Architecture: Interpretable CART Decision Tree (max_depth=5)
+Validation Split: GroupShuffleSplit (Experiment-Run Level - Zero Data Leakage)
 Classes: HEALTHY_NORMAL, LOCAL_GATEWAY_CONGESTION, UPSTREAM_ISP_FAULT, DNS_FAILURE, TARGET_SERVICE_DOWN, NETWORK_CONGESTION_LOSSY_LINK, PHYSICAL_CRC_CORRUPTION, ROUTE_FLAP, APPLICATION_LAYER_FAILURE
 
-|--- retrans_count <= 4.50
-|   |--- avg_latency <= 64.02
-|   |   |--- loss_pct <= 3.10
-|   |   |   |--- dns_loss_pct <= 40.00
-|   |   |   |   |--- http_loss_pct <= 50.00
-|   |   |   |   |   |--- jitter <= 9.55
-|   |   |   |   |   |   |--- class: 0
-|   |   |   |   |   |--- jitter >  9.55
-|   |   |   |   |   |   |--- class: 7
-|   |   |   |   |--- http_loss_pct >  50.00
-|   |   |   |   |   |--- tcp_connect_latency <= 4.00
-|   |   |   |   |   |   |--- class: 4
-|   |   |   |   |   |--- tcp_connect_latency >  4.00
-|   |   |   |   |   |   |--- class: 8
-|   |   |   |--- dns_loss_pct >  40.00
-|   |   |   |   |--- class: 3
-|   |   |--- loss_pct >  3.10
-|   |   |   |--- class: 6
-|   |--- avg_latency >  64.02
-|   |   |--- external_latency <= 102.76
-|   |   |   |--- class: 1
-|   |   |--- external_latency >  102.76
-|   |   |   |--- class: 2
-|--- retrans_count >  4.50
-|   |--- class: 5
+|--- dns_loss_pct <= 40.00
+|   |--- external_latency <= 107.33
+|   |   |--- tcp_connect_loss_pct <= 50.00
+|   |   |   |--- http_loss_pct <= 50.00
+|   |   |   |   |--- route_changed <= 0.50
+|   |   |   |   |   |--- class: 1
+|   |   |   |   |--- route_changed >  0.50
+|   |   |   |   |   |--- class: 7
+|   |   |   |--- http_loss_pct >  50.00
+|   |   |   |   |--- class: 8
+|   |   |--- tcp_connect_loss_pct >  50.00
+|   |   |   |--- class: 4
+|   |--- external_latency >  107.33
+|   |   |--- class: 2
+|--- dns_loss_pct >  40.00
+|   |--- class: 3
