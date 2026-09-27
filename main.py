@@ -244,8 +244,8 @@ def main():
     system.start()
 
     server_cfg = config.get("server", {})
-    host = server_cfg.get("host", "127.0.0.1")
-    port = server_cfg.get("port", 8000)
+    host = os.environ.get("HOST", server_cfg.get("host", "0.0.0.0"))
+    port = int(os.environ.get("PORT", server_cfg.get("port", 8000)))
 
     print("\n" + "=" * 75)
     print("      [*] NETWORK AUTOPSY PLATFORM IS LIVE AND MONITORING")

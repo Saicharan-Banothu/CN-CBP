@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: network-autopsy
+    runtime: python
+    plan: free
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: HOST
+        value: 0.0.0.0
+    healthCheckPath: /api/environment
