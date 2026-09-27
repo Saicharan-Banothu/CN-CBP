@@ -102,11 +102,19 @@ class NetworkAutopsySystem:
         raw_pings = agent_cfg.get("ping_targets", ["auto_gateway", "8.8.8.8", "1.1.1.1"])
         ping_targets = [gateway_ip if t == "auto_gateway" else t for t in raw_pings]
 
+        server_cfg = config.get("server", {})
+        server_port = int(os.environ.get("PORT", server_cfg.get("port", 8000)))
+
         raw_tcps = agent_cfg.get("tcp_targets", [{"target": "auto_gateway", "port": 80}])
         tcp_targets = []
         for item in raw_tcps:
             t = gateway_ip if item["target"] == "auto_gateway" else item["target"]
-            tcp_targets.append({"target": t, "port": item["port"]})
+            p = server_port if (item.get("target") == "127.0.0.1" and item.get("port") == 8000) else item["port"]
+            tcp_targets.append({"target": t, "port": p})
+
+        # Ensure local running server port is probed for TCP reachability
+        if not any(item.get("target") == "127.0.0.1" and item.get("port") == server_port for item in tcp_targets):
+            tcp_targets.append({"target": "127.0.0.1", "port": server_port})
 
         # Ensure our controlled socket proxy target is included in TCP probes
         has_proxy_target = any(
@@ -114,6 +122,14 @@ class NetworkAutopsySystem:
         )
         if not has_proxy_target:
             tcp_targets.append({"target": "127.0.0.1", "port": 8085})
+
+        # Dynamically adjust HTTP probe URL to point to active server port
+        raw_http = agent_cfg.get("http_targets", ["http://127.0.0.1:8000/api/demo-service/health"])
+        http_targets = []
+        for url in raw_http:
+            if ":8000/" in url:
+                url = url.replace(":8000/", f":{server_port}/")
+            http_targets.append(url)
 
         # 4. Initialize Passive Capture Agent
         sniff_cfg = agent_cfg.get("sniffer", {})
@@ -131,7 +147,7 @@ class NetworkAutopsySystem:
             traceroute_targets=agent_cfg.get("traceroute_targets", ["8.8.8.8"]),
             tcp_targets=tcp_targets,
             dns_targets=agent_cfg.get("dns_targets"),
-            http_targets=agent_cfg.get("http_targets"),
+            http_targets=http_targets,
             passive_capture=self.passive_capture,
         )
 

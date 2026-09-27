@@ -55,7 +55,16 @@ class RuleClassifier:
         gw_lat_high = features.gateway_latency >= 50.0 or (features.hop1_rtt >= 50.0) or ("gateway_latency" in anom_map)
         gw_loss_high = features.gateway_loss >= 15.0 or (features.hop1_loss >= 15.0)
 
-        if gw_lat_high or gw_loss_high:
+        # Cloud/Docker Bridge Suppression: If external latency is responsive (<60ms) and external loss is 0%,
+        # the local gateway is obviously routing packets without bottleneck. Do not trigger gateway congestion
+        # if the gateway IP is merely an unrouted bridge interface that drops direct ICMP echo.
+        is_cloud_docker_suppression = (
+            features.external_latency > 0
+            and features.external_loss < 5.0
+            and features.dns_loss_pct == 0.0
+            and features.gateway_latency == 0.0
+        )
+        if (gw_lat_high or gw_loss_high) and not is_cloud_docker_suppression:
             evidence: List[EvidenceItem] = []
             conf = 0.65
 
