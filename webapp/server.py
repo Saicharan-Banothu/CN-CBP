@@ -70,9 +70,152 @@ passive_capture_ref: Optional[PassiveCaptureAgent] = None
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
+# System Mode state tracking
+SYSTEM_MODE_OVERRIDE: Optional[str] = None
+
+
+def get_current_system_mode() -> str:
+    """Returns whether the system is running in Local Network mode or Cloud Demo mode."""
+    global SYSTEM_MODE_OVERRIDE
+    if SYSTEM_MODE_OVERRIDE:
+        return SYSTEM_MODE_OVERRIDE
+    if os.environ.get("RENDER") or os.environ.get("RENDER_SERVICE_ID") or os.environ.get("AUTOPSY_CLOUD_MODE"):
+        return "CLOUD_DEMO"
+    return "LOCAL_NETWORK"
+
+
 @app.get("/")
 def index():
     return RedirectResponse(url="/static/dashboard.html")
+
+
+@app.get("/api/system/status")
+def get_system_status():
+    """
+    Returns global system status, explicit mode (LOCAL_NETWORK vs CLOUD_DEMO),
+    data freshness, current user impact summary, and active issue details.
+    """
+    mode = get_current_system_mode()
+    features = aggregator.aggregate_current_window()
+    anomalies = baseline_learner.evaluate_window(features)
+    open_incidents = db.get_incidents(limit=1, status="ONGOING")
+    if not open_incidents:
+        open_incidents = db.get_incidents(limit=1, status="DETECTED")
+    if not open_incidents:
+        open_incidents = db.get_incidents(limit=1, status="CONFIRMED")
+
+    now = time.time()
+    data_age_s = round(now - features.window_end, 1) if features.window_end > 0 else 0.0
+    is_stale = data_age_s > 45.0
+
+    # Baseline maturity
+    base_summary = baseline_learner.get_ui_summary()
+    total_samples = sum(b.get("sample_count", 0) for b in base_summary.values())
+    is_warming = total_samples < 8
+
+    # Determine global status
+    if is_stale:
+        global_status = "STALE_DATA"
+    elif open_incidents:
+        global_status = "INCIDENT_ACTIVE"
+    elif is_warming:
+        global_status = "WARMING_BASELINE"
+    elif mode == "CLOUD_DEMO":
+        global_status = "CLOUD_DEMO"
+    elif mode == "DEMO_MODE":
+        global_status = "DEMO_MODE"
+    else:
+        global_status = "MONITORING"
+
+    # Data source label
+    if mode == "CLOUD_DEMO":
+        data_source = "Controlled Cloud Test Environment"
+    elif mode == "DEMO_MODE":
+        data_source = "Controlled Demonstration Scenario"
+    else:
+        data_source = "Local Network Agent"
+
+    # User impact & current issue
+    curr_issue = None
+    user_impact_summary = "Your network is operating within its normal range."
+
+    if open_incidents:
+        inc = open_incidents[0]
+        ev = inc.get_evidence()
+        curr_issue = {
+            "incident_id": inc.id,
+            "title": inc.probable_cause,
+            "user_description": ev.get("user_description", inc.symptom),
+            "likely_location": inc.hop_location,
+            "confidence_pct": int(inc.confidence_score * 100),
+            "started_at": time.strftime("%H:%M:%S", time.localtime(inc.detected_at)),
+            "duration_s": round(now - inc.detected_at, 1),
+            "status": inc.status,
+            "why_points": ev.get("why_points", [inc.symptom]),
+            "remediation": inc.remediation_text,
+        }
+        user_impact_summary = ev.get("user_impact", "Network performance is currently degraded.")
+    elif is_stale:
+        user_impact_summary = "Telemetry data is stale. Waiting for fresh telemetry from network agent."
+
+    # Subsystem readiness
+    has_pcap = False
+    try:
+        from scapy.config import conf
+        has_pcap = bool(conf.use_pcap)
+    except Exception:
+        has_pcap = False
+
+    return {
+        "system_mode": mode,
+        "global_status": global_status,
+        "data_source": data_source,
+        "is_live_network": (mode == "LOCAL_NETWORK" and not is_stale),
+        "data_freshness": {
+            "last_updated": time.strftime("%H:%M:%S", time.localtime(now - data_age_s)) if data_age_s > 0 else "Just now",
+            "data_age_s": data_age_s,
+            "is_stale": is_stale,
+        },
+        "user_impact_summary": user_impact_summary,
+        "current_issue": curr_issue,
+        "agent_info": {
+            "machine": platform.node(),
+            "os": f"{platform.system()} {platform.release()}",
+            "architecture": platform.machine(),
+            "python": sys.version.split()[0],
+            "status": "OFFLINE" if is_stale else "CONNECTED",
+            "capabilities": [
+                "Active Probes (Ping, Traceroute, DNS, HTTP, TCP)",
+                "Passive Packet Capture (IP/TCP/UDP Checksums)",
+                "Adaptive Baseline Learning (EMA + Z-score)",
+                "Explainable Decision Tree ML",
+                "Controlled Socket Fault Sandbox",
+            ],
+        },
+        "readiness": {
+            "network_monitoring": "READY",
+            "packet_capture": "OPERATIONAL" if has_pcap else "LIMITED (Raw Socket Mode)",
+            "traceroute": "READY",
+            "fault_testing": "READY",
+            "machine_learning": "READY",
+            "database": "READY",
+        },
+        "timestamp": now,
+    }
+
+
+class SystemModeRequest(BaseModel):
+    mode: str  # "LOCAL_NETWORK", "CLOUD_DEMO", "DEMO_MODE"
+
+
+@app.post("/api/system/mode")
+def set_system_mode(req: SystemModeRequest):
+    """Allows manual simulation or toggling between Local Network, Cloud Demo, and Demo modes."""
+    global SYSTEM_MODE_OVERRIDE
+    if req.mode in ("LOCAL_NETWORK", "CLOUD_DEMO", "DEMO_MODE"):
+        SYSTEM_MODE_OVERRIDE = req.mode
+        return {"status": "SUCCESS", "current_mode": SYSTEM_MODE_OVERRIDE}
+    raise HTTPException(status_code=400, detail="Invalid system mode. Expected LOCAL_NETWORK, CLOUD_DEMO, or DEMO_MODE.")
 
 
 @app.get("/api/environment")
@@ -102,6 +245,7 @@ def get_environment_diagnostics():
             "backend": "Npcap/WinPcap" if platform.system() == "Windows" else "libpcap / PF_PACKET",
             "status": "OPERATIONAL" if has_pcap else "LIMITED (Raw Socket Mode)",
             "guidance": "Install Npcap on Windows with 'WinPcap API-compatible Mode' enabled for full promiscuous sniffer." if not has_pcap and platform.system() == "Windows" else "Capture operational.",
+            "note": "IP header and TCP/UDP checksums are inspected. Physical Ethernet FCS is verified by network interface card hardware and stripped prior to userspace capture.",
         },
         "fault_injection": {
             "mode": "SAFE_SOCKET_PROXY_AND_SERVICE_EMULATION",
@@ -144,8 +288,8 @@ def demo_service_health():
 @app.get("/api/health")
 def get_health():
     """
-    Calculates overall network health score (0-100) and letter grade (A-F).
-    Provides fully explainable contributor deductions so the score is completely defensible.
+    Calculates overall network health score (0-100), primary state (Healthy, Degraded, Critical),
+    and explainable contributor impact points.
     """
     features = aggregator.aggregate_current_window()
     anomalies = baseline_learner.evaluate_window(features)
@@ -162,10 +306,12 @@ def get_health():
         score -= loss_pen
         contributors.append({
             "parameter": "Packet Loss",
+            "impact_points": loss_pen,
             "penalty": -loss_pen,
             "observed": f"{features.loss_pct:.1f}% loss",
             "baseline": "0.0%",
             "severity": "CRITICAL" if loss_pen > 20 else "MODERATE",
+            "explanation": f"Packets dropped in transmission reduce score by {loss_pen} points.",
         })
 
     # 2. Latency Anomaly Penalty
@@ -173,11 +319,13 @@ def get_health():
         lat_pen = min(int((features.avg_latency - 60) * 0.4), 25)
         score -= lat_pen
         contributors.append({
-            "parameter": "Latency Anomaly",
+            "parameter": "Connection Delay",
+            "impact_points": lat_pen,
             "penalty": -lat_pen,
-            "observed": f"{features.avg_latency:.1f}ms",
-            "baseline": "< 40ms",
+            "observed": f"{features.avg_latency:.1f} ms",
+            "baseline": "< 40 ms",
             "severity": "HIGH" if lat_pen > 15 else "LOW",
+            "explanation": f"Latency above normal baseline reduces score by {lat_pen} points.",
         })
 
     # 3. DNS Failure Penalty
@@ -186,10 +334,12 @@ def get_health():
         score -= dns_pen
         contributors.append({
             "parameter": "DNS Resolution Degradation",
+            "impact_points": dns_pen,
             "penalty": -dns_pen,
             "observed": f"{features.dns_loss_pct:.1f}% failure",
             "baseline": "0.0%",
             "severity": "CRITICAL",
+            "explanation": f"Failed domain name lookups reduce score by {dns_pen} points.",
         })
 
     # 4. HTTP Application Failure Penalty
@@ -197,11 +347,13 @@ def get_health():
         http_pen = min(int(features.http_loss_pct * 0.25), 25)
         score -= http_pen
         contributors.append({
-            "parameter": "HTTP / Application Service Failure",
+            "parameter": "Web Service Response",
+            "impact_points": http_pen,
             "penalty": -http_pen,
             "observed": f"HTTP {features.http_status_code} ({features.http_loss_pct:.0f}% failure)",
-            "baseline": "HTTP 200",
+            "baseline": "HTTP 200 OK",
             "severity": "HIGH",
+            "explanation": f"Web application response error reduces score by {http_pen} points.",
         })
 
     # 5. TCP Retransmissions & Congestion Penalty
@@ -209,11 +361,13 @@ def get_health():
         tcp_pen = min(int(features.retrans_count * 2), 20)
         score -= tcp_pen
         contributors.append({
-            "parameter": "TCP Retransmissions / Congestion",
+            "parameter": "Data Retransmissions",
+            "impact_points": tcp_pen,
             "penalty": -tcp_pen,
-            "observed": f"{features.retrans_count} retrans",
+            "observed": f"{features.retrans_count} retransmissions",
             "baseline": "< 2",
             "severity": "MODERATE",
+            "explanation": f"Transport layer re-sending data reduces score by {tcp_pen} points.",
         })
 
     # 6. Packet Integrity Penalty
@@ -222,21 +376,25 @@ def get_health():
         score -= chk_pen
         contributors.append({
             "parameter": "Packet Checksum Corruption",
+            "impact_points": chk_pen,
             "penalty": -chk_pen,
             "observed": f"{features.checksum_errors} checksum errors",
             "baseline": "0",
             "severity": "CRITICAL",
+            "explanation": f"Corrupted packet headers reduce score by {chk_pen} points.",
         })
 
     # 7. Route Instability Penalty
     if features.route_changed:
         score -= 10
         contributors.append({
-            "parameter": "Routing Path Shift / Route Flap",
+            "parameter": "Route Stability",
+            "impact_points": 10,
             "penalty": -10,
             "observed": "Path altered vs historical topology",
             "baseline": "Stable path",
             "severity": "LOW",
+            "explanation": "Dynamic routing hop change reduces score by 10 points.",
         })
 
     # 8. Active Incident Penalty
@@ -245,32 +403,32 @@ def get_health():
         score -= inc_pen
         contributors.append({
             "parameter": "Active Unresolved Incidents",
+            "impact_points": inc_pen,
             "penalty": -inc_pen,
             "observed": f"{len(open_incidents)} ongoing",
             "baseline": "0",
             "severity": "MODERATE",
+            "explanation": f"Unresolved incident state reduces score by {inc_pen} points.",
         })
 
     score = max(min(int(score), 100), 10)
 
-    # Grade mapping
-    if score >= 90:
-        grade = "A"
-        summary = "Network Optimal — All active probes responding within adaptive baselines."
-    elif score >= 80:
-        grade = "B"
-        summary = "Good — Minor latency jitter or harmless packet variance."
-    elif score >= 65:
-        grade = "C"
-        summary = "Degraded — Moderate packet loss or transport retransmissions detected."
-    elif score >= 50:
-        grade = "D"
-        summary = "Substandard — Severe delay, packet drop, or DNS slowness."
+    # Primary Health State & Grade mapping
+    if score >= 85:
+        health_status = "Healthy"
+        grade = "A" if score >= 90 else "B"
+        summary = "Your network is operating within its normal range."
+    elif score >= 60:
+        health_status = "Degraded"
+        grade = "C" if score >= 70 else "D"
+        summary = "Your connection is experiencing moderate performance degradation."
     else:
+        health_status = "Critical"
         grade = "F"
-        summary = "Critical Failure — Active bottleneck, service crash, or link drop."
+        summary = "Severe network impairment or service failure detected."
 
     return {
+        "health_status": health_status,
         "grade": grade,
         "score": score,
         "status_summary": summary,
@@ -283,7 +441,7 @@ def get_health():
 
 @app.get("/api/latest-metrics")
 def get_latest_metrics():
-    """Returns the most recent rolling window features, baseline status, and data freshness."""
+    """Returns rolling window features, baseline status, and structured user metric cards."""
     features = aggregator.aggregate_current_window()
     baselines = baseline_learner.get_ui_summary()
 
@@ -300,7 +458,6 @@ def get_latest_metrics():
             "total_packets": sum(db_protos.values()),
         }
 
-    # If sniffer yielded zero packets (e.g. no Npcap on Windows), fallback to verified database transactions
     if sum(passive_stats.get("protocols", {}).values()) == 0:
         db_protos = db.get_observed_protocol_counts()
         passive_stats["protocols"] = db_protos
@@ -310,35 +467,156 @@ def get_latest_metrics():
     now = time.time()
     data_age_s = round(now - features.window_end, 1) if features.window_end > 0 else 0.0
     is_stale = data_age_s > 45.0
+    mode = get_current_system_mode()
+
+    # Base values
+    base_lat = baselines.get("avg_latency", {}).get("mean", 20.0)
+    lat_diff = round(((features.avg_latency - base_lat) / max(base_lat, 1)) * 100) if features.avg_latency > 0 else 0
+
+    metric_cards = {
+        "connection_delay": {
+            "title": "Connection delay",
+            "current": f"{features.avg_latency:.1f} ms" if features.avg_latency > 0 else "0.0 ms",
+            "normal_range": f"{max(base_lat - 10, 2):.0f}–{base_lat + 15:.0f} ms",
+            "difference": f"{lat_diff:+d}%",
+            "status": "Higher than normal" if lat_diff > 40 else "Normal",
+            "technical_drawer": f"Avg: {features.avg_latency:.1f}ms | Max: {features.max_latency:.1f}ms | Probes: {features.raw_probe_count} (ICMP Echo)",
+        },
+        "connection_stability": {
+            "title": "Connection stability",
+            "current": f"{features.jitter:.1f} ms",
+            "normal_range": "< 4.0 ms",
+            "difference": "Normal" if features.jitter < 4.0 else f"+{features.jitter:.1f} ms",
+            "status": "Stable" if features.jitter < 6.0 else "High Jitter",
+            "technical_drawer": "RFC 3393 packet arrival delay variance (stddev across rolling window)",
+        },
+        "packet_loss": {
+            "title": "Packet loss",
+            "current": f"{features.loss_pct:.1f}%",
+            "normal_range": "0.0%",
+            "difference": "+0%" if features.loss_pct == 0 else f"+{features.loss_pct:.1f}%",
+            "status": "Normal" if features.loss_pct < 2.0 else "Packet Drop Detected",
+            "technical_drawer": f"Probes sent: {features.raw_probe_count * 3} | Packets acknowledged: {int(features.raw_probe_count * 3 * (1 - features.loss_pct/100))}",
+        },
+        "dns_response": {
+            "title": "DNS response",
+            "current": f"{features.dns_latency:.1f} ms",
+            "normal_range": "15–50 ms",
+            "difference": "Normal" if features.dns_latency < 60 else "Elevated",
+            "status": "Healthy" if features.dns_loss_pct < 10 else "Degraded",
+            "technical_drawer": f"DNS failure rate: {features.dns_loss_pct:.0f}% | Target resolver: 8.8.8.8 (UDP port 53)",
+        },
+        "web_service_response": {
+            "title": "Web service response",
+            "current": f"HTTP {features.http_status_code}",
+            "normal_range": "HTTP 200",
+            "difference": "OK" if features.http_status_code == 200 else f"HTTP {features.http_status_code}",
+            "status": "Available" if features.http_status_code == 200 else "Service Failure",
+            "technical_drawer": f"HTTP probe round-trip: {features.http_latency:.1f}ms | TTFB: {features.http_ttfb:.1f}ms",
+        },
+        "data_retransmissions": {
+            "title": "Data retransmissions",
+            "current": f"{features.retrans_count}",
+            "normal_range": "< 2",
+            "difference": "0" if features.retrans_count == 0 else f"+{features.retrans_count}",
+            "status": "Normal" if features.retrans_count < 3 else "Congested",
+            "technical_drawer": f"TCP fast-retransmits: {features.retrans_count} | Duplicate ACKs: {features.dup_ack_count}",
+        },
+    }
 
     return {
         "features": features.to_dict(),
         "baselines": baselines,
+        "metric_cards": metric_cards,
         "passive_stats": passive_stats,
         "timestamp": now,
         "data_age_s": data_age_s,
         "is_stale": is_stale,
-        "telemetry_source": "LIVE_NETWORK",
+        "system_mode": mode,
+        "telemetry_source": "Controlled Cloud Environment" if mode == "CLOUD_DEMO" else "Local Network Agent",
     }
 
 
 @app.get("/api/topology")
 def get_topology():
     """
-    Returns dynamic hop-by-hop path topology view with hop confidence,
-    status classification (HEALTHY, SUSPECTED, LIKELY_FAULT, UNCONFIRMED),
-    and per-hop RTT/loss metrics.
+    Returns dynamic hop-by-hop path topology with user-friendly stage grouping
+    (YOU -> LOCAL GATEWAY -> INTERMEDIATE NETWORK -> DESTINATION),
+    collapsible healthy hops, and hop confidence analysis.
     """
     features = aggregator.aggregate_current_window()
     hop_analysis = hop_scorer.evaluate_hops(features, target_override="8.8.8.8")
+    raw_hops = [h if isinstance(h, dict) else h.to_dict() for h in hop_analysis.hop_observations]
+
+    # Structure into pipeline stages
+    structured_stages = []
+    # 1. Source (YOU)
+    structured_stages.append({
+        "stage": "SOURCE",
+        "name": "YOU",
+        "ip": "Local Device",
+        "status": "HEALTHY",
+        "latency_ms": 0.0,
+        "loss_pct": 0.0,
+        "description": "Your local machine and network interface card",
+    })
+
+    # Map hops
+    for idx, h in enumerate(raw_hops):
+        hop_num = h.get("hop_number", idx + 1)
+        ip = h.get("ip", "*")
+        status = h.get("status", "HEALTHY")
+        rtt = h.get("current_rtt_ms", 0.0)
+        loss = h.get("loss_pct", 0.0)
+
+        if hop_num == 1:
+            stage_name = "LOCAL GATEWAY"
+            desc = "Local Wi-Fi router / default gateway"
+        elif hop_num == len(raw_hops):
+            stage_name = "DESTINATION"
+            desc = "Target service / DNS server (8.8.8.8)"
+        else:
+            stage_name = f"HOP {hop_num}"
+            desc = "Transit carrier / internet service provider router"
+
+        structured_stages.append({
+            "stage": stage_name,
+            "hop_number": hop_num,
+            "name": stage_name,
+            "ip": ip,
+            "status": status,
+            "latency_ms": rtt,
+            "loss_pct": loss,
+            "confidence": h.get("confidence", "Medium"),
+            "deviation_pct": h.get("deviation_pct", 0.0),
+            "evidence_count": h.get("evidence_count", 0),
+            "description": desc,
+            "why_points": [
+                f"Observed round-trip time: {rtt:.1f} ms" if rtt > 0 else "Hop did not respond to ICMP echo",
+                f"Packet loss rate: {loss:.1f}%",
+                f"Classification: {status}",
+            ],
+        })
+
+    # Summary statement
+    has_fault = any(h.get("status") in ("SUSPECTED", "LIKELY_FAULT") for h in raw_hops)
+    if has_fault:
+        path_status = "DEGRADED"
+        summary_text = f"Performance degradation detected near {hop_analysis.hop_location}."
+    else:
+        path_status = "HEALTHY"
+        summary_text = f"Path is operating normally across {len(raw_hops)} hops (End-to-end delay: {features.avg_latency:.1f} ms, 0% loss)."
 
     return {
         "target": "8.8.8.8",
-        "path_length": len(hop_analysis.hop_observations),
+        "path_status": path_status,
+        "summary_text": summary_text,
+        "path_length": len(raw_hops),
         "suspected_hop": hop_analysis.suspect_hop_num,
         "suspected_location": hop_analysis.hop_location,
         "confidence": hop_analysis.hop_confidence,
-        "hops": [h if isinstance(h, dict) else h.to_dict() for h in hop_analysis.hop_observations],
+        "stages": structured_stages,
+        "hops": raw_hops,
         "is_unconfirmed_region": "unconfirmed" in hop_analysis.hop_location.lower(),
         "timestamp": time.time(),
     }

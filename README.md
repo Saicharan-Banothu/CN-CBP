@@ -1,289 +1,203 @@
-# 🔬 Network Autopsy
+# 🌐 Network Autopsy
 
-> **A Multi-Parameter Network Failure Diagnosis and Root-Cause Localization Platform**  
-> Continuous Active/Passive Telemetry • Network-Specific Adaptive Baselines • Multi-Signal Evidence Correlation • Hop Confidence Attribution • White-Box ML Confirmation • Safe Socket Fault Injection • Empirical Validation Engine
-
----
-
-## 1. Project Title & Overview
-
-**Network Autopsy** is a small-LAN and lab network fault diagnosis and root-cause localization platform. Rather than acting as an Intrusion Detection System (IDS), cybersecurity monitor, or generic ping dashboard, Network Autopsy systematically answers five critical operational questions whenever network degradation occurs:
-
-1. **What is happening?** (Degradation characterization across Latency, Loss, Jitter, Retransmissions, DNS, TCP, and HTTP).
-2. **Where is it happening?** (Hop-by-hop path attribution with confidence intervals, distinguishing LAN gateway bottlenecks from upstream ISP transit).
-3. **Why is it happening?** (Multi-signal evidence correlation identifying the exact failure mode across OSI Layers 1–7).
-4. **How confident are we?** (Transparent evidence fusion combining expert rules, statistical baseline anomalies, path consistency, and white-box Decision Tree confirmation).
-5. **Did it recover?** (Automated post-fault recovery detection and incident lifecycle resolution).
+> **A Professional Network Observability, Multi-Signal Fault Diagnosis, and Root-Cause Localization Platform**  
+> Continuous Active/Passive Telemetry • Adaptive Network Baselines • Multi-Signal Evidence Fusion • Corroborated Hop Attribution • White-Box Decision Tree ML • Safe Socket Fault Sandbox • Clean Separation of Empirical vs. Synthetic Validation
 
 ---
 
-## 2. Problem Statement
+## 1. Project Overview
 
-Modern small-office, home, and academic lab networks suffer from silent, compound failures: bufferbloat congestion, DNS sinkholing, transport-layer packet drops, intermediate routing path flaps, and application server crashes. 
+**Network Autopsy** is a network observability and fault-diagnosis platform that combines active network probing, passive traffic evidence, adaptive statistical baselines, multi-signal correlation, path analysis, and explainable machine learning to identify and explain network failures.
 
-Standard network monitoring tools present major shortcomings:
-- **Single-metric false alarms**: Alerting simply because latency exceeds an arbitrary threshold (e.g. `> 60ms`), ignoring network-specific operational norms.
-- **Traceroute misattribution**: Blindly blaming intermediate hops that rate-limit ICMP TTL-Exceeded packets, despite forwarding data traffic at full line rate.
-- **Disconnected toolchains**: Requiring engineers to manually correlate `ping`, `traceroute`, `tcpdump`, and application logs.
-- **Synthetic validation fallacies**: Academic prototypes claiming "100% accuracy" evaluated purely on in-memory synthetic feature vectors, without ever testing against degraded physical or virtual network sockets.
+Rather than functioning as an Intrusion Detection System (IDS), generic ping monitor, or student toy dashboard, Network Autopsy is designed as an **evidence-driven observability platform** suitable for demonstration to university professors and as a serious engineering prototype.
 
----
+The primary user interface immediately answers five critical questions:
+1. **Is my network OK?** (Overall health state: Healthy, Degraded, Critical, with explainable score).
+2. **What is wrong?** (Plain-language symptom translation and user-impact summary).
+3. **Where is the problem?** (Interactive hop-by-hop path attribution distinguishing local LAN from transit ISP).
+4. **Why does the system think that?** (Corroborated evidence bullet points, agreement count, and rejected alternative hypotheses).
+5. **What should I do next?** (Actionable remediation guidance).
 
-## 3. Motivation
-
-Diagnosing network failures requires **multi-parameter synthesis**. A latency increase at the local gateway implies wireless congestion; the same latency increase with zero gateway degradation implies an upstream WAN bottleneck. A TCP connect timeout while ICMP ping succeeds indicates a firewall or closed port; an HTTP 503 response while TCP handshakes complete cleanly isolates an application crash. Network Autopsy automates this multi-layer reasoning in real time.
-
----
-
-## 4. Core Contributions
-
-1. **Dual Active/Passive Telemetry Store**: Merges active ICMP, Traceroute, TCP handshake, DNS, and HTTP GET probes with passive sniffer metrics (TCP retransmissions, duplicate ACKs, checksum integrity errors).
-2. **Network-Specific Adaptive Baselines**: Learns dynamic running means, standard deviations, medians, 95th percentiles, and EWMA statistics per metric, flagging anomalies via statistically defensible deviation percentages rather than hardcoded thresholds.
-3. **Corroborated Hop Confidence Scoring**: Evaluates multiple consecutive traceroute runs alongside direct gateway probes and passive transport indicators. Never attributes fault to a single hop without independent corroboration; tags unconfirmed downstream drops as `likely region: hop X–Y (unconfirmed)`.
-4. **Explainable Multi-Tier Consensus Engine**: Combines an 8-rule expert classifier with an interpretable CART Decision Tree (`max_depth=6`) that exports white-box if-then rules to plain text for post-mortem viva defense.
-5. **Safe Fault Injection Sandbox**: Provides a dedicated loopback proxy (`ControlledNetworkTarget` on port 8085) that safely injects socket-level latency, jitter, packet loss, bandwidth throttling, connection refusal, and HTTP 503 without modifying the user's primary network interface.
-6. **Empirical Ground-Truth Validation Engine**: Evaluates diagnostic accuracy, detection latency, localization accuracy, and recovery detection against real degraded OS network sockets, cleanly separated from synthetic unit benchmarks.
+At the same time, the platform features a **Technical View (Professor Mode)** toggle that reveals raw feature vectors, mathematical baseline bounds, rule firing conditions, hop confidence calculations, and Decision Tree probabilities.
 
 ---
 
-## 5. End-to-End System Architecture
+## 2. Problem Statement & Motivation
+
+Small-office, home, and academic lab networks frequently suffer from silent, compound failures:
+- **Bufferbloat & Gateway Congestion**: Large queuing buffers causing severe latency spikes during uploads/downloads.
+- **Traceroute Misattribution**: Standard tools blaming intermediate transit routers that rate-limit ICMP TTL-Exceeded packets, even when data traffic is forwarded at line rate.
+- **Single-Metric False Alarms**: Alerts triggered merely because ping latency exceeded an arbitrary static threshold (e.g. `> 50ms`), ignoring network-specific operational norms.
+- **Disconnected Diagnostic Silos**: Requiring operators to manually piece together `ping`, `traceroute`, `tcpdump`, and web application logs.
+- **Academic Synthetic Fallacies**: Research prototypes claiming "perfect accuracy" tested only on artificial in-memory arrays without testing against real, degraded network sockets.
+
+Network Autopsy unifies active probing, passive packet sniffing, adaptive baselines, and multi-signal evidence fusion into a single coherent system.
+
+---
+
+## 3. Architecture & Operational Modes
+
+To prevent misleading claims, Network Autopsy explicitly distinguishes **Local Network Monitoring** from **Cloud Demonstration**:
 
 ```
-                    REAL NETWORK / TEST TOPOLOGY
-                                 │
-              ┌──────────────────┴──────────────────┐
-              │                                     │
-     Active Probes (Layer 3-7)             Passive Packet Sniffer (Layer 2-4)
-     • ICMP Gateway & WAN Ping             • TCP Retransmission Tracker
-     • TTL Traceroute Sequence             • Duplicate ACK Counter (RFC 5681)
-     • TCP Connect Handshake               • TCP RST / FIN Monitor
-     • DNS Query Resolution Time           • IP/TCP Checksum Integrity Verifier
-     • Raw HTTP GET & TTFB                 • Protocol Distribution Counter
-              │                                     │
-              └──────────────────┬──────────────────┘
-                                 │ Raw Telemetry & Events
-                                 ▼
-                     METRICS STORE (SQLite WAL Mode)
-                     probe_results │ hop_data │ packet_events
-                     incidents     │ baselines│ experiments
-                                 │
-                                 ▼
-                    WINDOWED FEATURE AGGREGATOR
-                    (20-second rolling sliding windows)
-                                 │
-                                 ▼
-                     ADAPTIVE BASELINE LEARNER
-                     (Running Mean, StdDev, Median, EWMA, % Deviation)
-                                 │
-                                 ▼
-                    MULTI-SIGNAL EVIDENCE CORRELATOR
-                                 │
-        ┌────────────────────────┼────────────────────────┐
-        ▼                        ▼                        ▼
-  8-Rule Expert            Hop Confidence            Interpretable ML
-    Classifier             Scoring Engine             Decision Tree
- (Layer & Cause)         (Corroborated Hops)         (Secondary Conf)
-        │                        │                        │
-        └────────────────────────┼────────────────────────┘
-                                 │
-                                 ▼
-                       EVIDENCE FUSION LAYER
-                     (Consensus & Confidence)
-                                 │
-                                 ▼
-                      INCIDENT LIFECYCLE MANAGER
-                DETECTED ➔ CONFIRMED ➔ ONGOING ➔ RESOLVED
-                    (Deduplication & Recovery Detection)
-                                 │
-              ┌──────────────────┼──────────────────┐
-              ▼                  ▼                  ▼
-       Live Dashboard     Autopsy Report      Incident Timeline
-       (Path Topology &   (Jinja2 Post-Mortem (State Transitions)
-       Explainable Grade)  HTML Document)
-              ▲
-              │
-       VALIDATION LAB
-              │
-       Safe Fault Proxy ────► Ground Truth ────► Evaluation Engine
-       (Socket Injections)    Trial Logger        (Precision, Recall, F1,
-                                                  Latency, Recovery)
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                    MODE A — LOCAL NETWORK AGENT (GENUINE LAN)                │
+│  Runs on: Linux, WSL2, Windows                                               │
+│  • Active Probes: ICMP, Traceroute, TCP Handshake, DNS, HTTP                 │
+│  • Passive Sniffer: TCP Retransmissions, Duplicate ACKs, Checksum Errors     │
+│  • Local Safe Socket Proxy: ControlledNetworkTarget (Port 8085)              │
+│  • Real Telemetry Label: [● LOCAL NETWORK AGENT]                             │
+└──────────────────────────────────────┬───────────────────────────────────────┘
+                                       │
+                                       ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                    MODE B — CLOUD DEMO (RENDER DEPLOYMENT)                   │
+│  Hosted at: https://network-autopsy.onrender.com/                            │
+│  • Controlled cloud container environment                                    │
+│  • TCP ping transport fallback when container ICMP echo is blocked           │
+│  • Honest Telemetry Label: [☁️ CLOUD DEMO]                                   │
+│  • Never deceptively claims to monitor the browser visitor's personal LAN    │
+└──────────────────────────────────────┬───────────────────────────────────────┘
+                                       │
+                                       ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                    MODE C — CONTROLLED DEMONSTRATION MODE                    │
+│  • Deterministic fault scenario simulation for professor demonstrations       │
+│  • Honest Telemetry Label: [⚡ DEMO MODE]                                     │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
+
+### Global Status Model
+The system explicitly tracks and displays its operational lifecycle state:
+`STARTING` ➔ `CONNECTING` ➔ `COLLECTING` ➔ `WARMING_BASELINE` ➔ `MONITORING` ➔ `DEGRADED` ➔ `INCIDENT_ACTIVE` ➔ `RECOVERING` ➔ `STALE_DATA` ➔ `DEMO_MODE` ➔ `CLOUD_DEMO` ➔ `LOCAL_AGENT`.
+
+The UI **never displays "LIVE NETWORK"** unless verified telemetry is arriving from a local or connected network agent.
 
 ---
 
-## 6. Comprehensive Features List
-
-- **Live Freshness Monitor**: Displays data age in seconds, last update timestamp, and visual pulse indicator (`LIVE` vs `STALE DATA`).
-- **Explainable Health Score Card**: Network health score (0–100) and letter grade (A–F) accompanied by an expandable deduction breakdown detailing the exact penalty contributed by each anomalous metric.
-- **Dynamic Network Path Topology View**: Interactive visual hop sequence (`Local Host` ➔ `Gateway` ➔ `Hop 2` ➔ `Hop 3` ➔ `Destination`) displaying per-hop RTT, loss %, deviation %, and status badges (`HEALTHY`, `SUSPECTED`, `LIKELY_FAULT`, `UNCONFIRMED`). Clicking any hop opens an inspection card.
-- **Dual-Axis Telemetry Timeline**: Real-time Chart.js graph displaying live latency alongside its adaptive baseline band and packet loss bars.
-- **Incident Deduplication**: Correlates recurring symptom windows under a single canonical incident key, preventing alert storms while tracking total incident duration and occurrence count.
-- **Recovery Detection**: Continuously checks active incidents against recovering telemetry; automatically transitions incidents to `RESOLVED` when metrics return to baseline tolerances.
-- **Controlled Validation Lab**: UI sandbox supporting 10 safe fault injection scenarios, duration/intensity configuration, step progression tracking, and ground-truth comparison.
-- **Strict Separation of Validation Regimes**: Independent tabs for empirical real-network experiments vs. synthetic unit benchmarks, preventing fabricated or misleading metrics.
-
----
-
-## 7. Data Pipeline & System Flow
+## 4. End-to-End Diagnosis Pipeline
 
 ```
-1. Active Probes & Sniffer run continuously in background worker threads.
-2. Probe results and packet events write to SQLite WAL database.
-3. Every 10 seconds, WindowAggregator extracts telemetry from [now - 20s, now].
-4. BaselineLearner evaluates window metrics against running mean ± 3σ and computes % deviation.
-5. HopConfidenceScorer analyzes consecutive traceroute runs for bottleneck corroboration.
-6. RuleClassifier evaluates 8 deterministic expert rules; ML Classifier predicts fault class.
-7. ReportGenerator checks active incidents for recovery; if unresolved anomalies exist, generates or updates deduplicated incident.
-8. Dashboard polls REST APIs (/api/health, /api/latest-metrics, /api/topology, /api/incidents) and renders real-time state.
+                                  NETWORK ENVIRONMENT
+                                           │
+                        ┌──────────────────┴──────────────────┐
+                        │                                     │
+               Active Probes (L3–L7)                 Passive Packet Sniffer (L2–L4)
+               • ICMP Gateway & WAN Ping             • TCP Retransmissions
+               • TTL Traceroute Sequence             • Duplicate ACKs (RFC 5681)
+               • TCP Connect Handshake               • TCP RST / FIN Monitor
+               • DNS Query Resolution Time           • IP/TCP Checksum Integrity
+               • HTTP GET & TTFB Measurement         • Protocol Distribution
+                        │                                     │
+                        └──────────────────┬──────────────────┘
+                                           │ Raw Metrics
+                                           ▼
+                               METRICS STORAGE (SQLite WAL)
+                                           │
+                                           ▼
+                              WINDOWED FEATURE AGGREGATOR
+                           (20-second rolling sliding windows)
+                                           │
+                                           ▼
+                               ADAPTIVE BASELINE LEARNER
+                           (EWMA, Running Mean, StdDev, Median)
+                                           │
+                                           ▼
+                               EVIDENCE FUSION ENGINE
+                                           │
+                  ┌────────────────────────┼────────────────────────┐
+                  ▼                        ▼                        ▼
+            8-Rule Expert            Hop Confidence            White-Box CART
+              Classifier             Scoring Engine             Decision Tree
+           (Cause & Impact)       (Multi-Run Hops)          (Independent Check)
+                  │                        │                        │
+                  └────────────────────────┼────────────────────────┘
+                                           │
+                                           ▼
+                               INCIDENT LIFECYCLE ENGINE
+                       DETECTED ➔ CONFIRMED ➔ ONGOING ➔ RESOLVED
+                         (Deduplication & Recovery Detection)
+                                           │
+                        ┌──────────────────┴──────────────────┐
+                        ▼                                     ▼
+                USER VIEW (Default)              TECHNICAL VIEW (Professor Mode)
+           • "What is happening?"             • Raw 26-parameter feature vectors
+           • "Where is the problem?"          • Mathematical baseline bounds
+           • "Why?" (Evidence bullet points)  • Hop scoring confidence formulas
+           • Actionable remediation           • Decision Tree if-then rule branches
 ```
 
 ---
 
-## 8. Technology Stack
+## 5. Core Algorithmic Subsystems
 
-| Component | Technology | Rationale |
-|:---|:---|:---|
-| **Backend Framework** | FastAPI + Uvicorn | High-performance asynchronous REST endpoints with automatic OpenAPI documentation. |
-| **Telemetry Store** | SQLite 3 (WAL Mode) | Zero-configuration, ACID-compliant local database; eliminates external service dependencies (Redis/Postgres). |
-| **Packet Capture** | Scapy + Raw Sockets | Python packet crafting and decoding; supports promiscuous sniffer with graceful socket fallbacks. |
-| **Machine Learning** | scikit-learn | Transparent CART `DecisionTreeClassifier` (deployed) and `RandomForestClassifier` (benchmark). |
-| **Templating Engine** | Jinja2 | Renders comprehensive standalone HTML autopsy post-mortem reports. |
-| **Frontend UI** | HTML5, Vanilla CSS, JS, Chart.js | Lightweight, responsive dark-mode dashboard without heavy Node/React build toolchains. |
+### 5.1 Adaptive Baseline Learning
+Rather than hardcoding static thresholds, the system learns normal operational bounds using **Exponential Moving Averages (EWMA)** and standard deviation ($\sigma$):
+- **Warm-Up Phase**: Requires 8+ observation windows before enabling strict statistical deviation checks.
+- **Anomalies**: Flagged when observed telemetry deviates by more than $k \times \sigma$ ($k = 3.0$).
+- **Update Rate**: Controlled by $\alpha = 0.05$ to adapt to diurnal shifts without absorbing transient failure spikes into normal baselines.
 
----
+### 5.2 Corroborated Hop Attribution
+Traceroute alone cannot prove an intermediate router is faulty:
+- Single-hop spikes are capped at "Low" confidence if downstream hops respond normally (distinguishing ICMP rate-limiting from genuine congestion).
+- Confidence is upgraded to "High" only when multiple consecutive runs corroborate delay/loss and independent gateway or WAN probes agree.
+- Unconfirmed router drops are explicitly labeled `likely region: hop X–Y (unconfirmed)`.
 
-## 9. Installation & Setup Instructions
+### 5.3 Common-Language Translation & Progressive Disclosure
+The system maintains dual representation for every diagnosis:
+- **User View**: Plain English, impact-focused, zero unexplained acronyms.
+- **Technical View**: OSI layer, exact rule identifier, raw measurements, and ML class probability.
 
-### Prerequisites
-- Python 3.11, 3.12, or 3.13
-- Windows 10/11, Ubuntu Linux, or WSL2
+| Failure Mode | User-Centric Explanation | Technical Description | User Experience Impact |
+|:---|:---|:---|:---|
+| `GATEWAY_CONGESTION` | "Your connection to the local router or Wi-Fi gateway is congested or experiencing packet loss." | First-hop link saturation with elevated RTT and packet drop at gateway / AP interface. | Streaming video may freeze, web pages load slowly, and calls drop frames. |
+| `UPSTREAM_ISP_FAULT` | "A problem was detected in the upstream internet provider or intermediate network path." | Transit carrier degradation or core routing bottleneck at intermediate hop segment. | External services respond slowly while your local router connection is working normally. |
+| `DNS_FAILURE` | "Your device can reach the internet, but domain-name lookup (DNS) is failing or timing out." | Domain Name System resolution timeout with intact direct IP layer reachability. | Typing website names fails to load, even though direct IP pings succeed. |
+| `TARGET_SERVICE_DOWN` | "The destination server or web service is not accepting connections, although network connectivity is working." | TCP port connection refused (RST) or dropped by firewall with normal ICMP echo reachability. | The specific app or website cannot be reached, but other internet sites work fine. |
+| `LOSSY_LINK` | "Your connection is experiencing packet loss, congestion, and dropped data transmissions." | Multi-parameter congestion with TCP fast-retransmits and throughput collapse. | Downloads and streaming will feel stuttery or slow due to repeated data retransmissions. |
+| `CHECKSUM_ERRORS` | "Network packets are arriving with corrupted checksum data, indicating transport or cable errors." | IP header and TCP/UDP payload checksum validation failures in passive traffic. | Connections randomly reset, files fail checksum verification, or transfers stall. |
+| `ROUTE_FLAP` | "The network path to the destination changed unexpectedly, causing momentary instability." | Dynamic routing table hop mutation (BGP/OSPF route flap or automated link failover). | Brief lag spikes or 1-2 second disconnections while the router selects a new path. |
+| `APPLICATION_FAILURE` | "The network connection is working, but the destination web service is returning an error (HTTP 5xx)." | Application-level HTTP 500/502/503 error returned despite successful TCP handshake. | The website displays an internal server error, but your internet connection is healthy. |
 
-### Clone and Install
-```bash
-# 1. Clone repository
-git clone https://github.com/Saicharan-Banothu/CN-CBP.git
-cd CN-CBP
-
-# 2. Install dependencies
-pip install -r requirements.txt
-```
-
----
-
-## 10. Linux, WSL2, and Windows Environment Requirements
-
-The platform automatically detects its operating environment at startup:
-- **Windows (Native)**: Active probes utilize Windows `ping`, `tracert`, and native TCP/UDP sockets. Fault injection runs safely via the local `ControlledNetworkTarget` socket proxy on port 8085.
-- **Linux / WSL2**: Supports Linux kernel Traffic Control (`tc netem`) on dedicated virtual interfaces (e.g. `veth` pairs) when root privileges are available, falling back safely to the socket proxy when unprivileged.
-
----
-
-## 11. Packet Capture Permissions & Npcap Guidance
-
-- **Windows**: To enable passive TCP retransmission and duplicate ACK sniffing, install [Npcap](https://npcap.com/) with **"Install Npcap in WinPcap API-compatible Mode"** enabled. If Npcap is absent, the system operates in raw socket fallback mode and marks capture capabilities transparently in `/api/environment`.
-- **Linux**: Grant packet capture permissions without root:
-  ```bash
-  sudo setcap cap_net_raw,cap_net_admin=eip $(readlink -f $(which python3))
-  ```
+### 5.4 Root-Cause Alternatives & Hypothesis Rejection
+Every diagnosis dynamically evaluates alternative hypotheses and presents rejection rationales:
+- **Primary Hypothesis**: e.g., DNS Failure (95% confidence).
+- **Alternative Considered**: Complete network outage (5% probability) ➔ **REJECTED**: Direct IP pings to `8.8.8.8` and `1.1.1.1` succeeded with low latency.
+- **Alternative Considered**: Outbound UDP port 53 firewall rule (20% probability) ➔ **PLAUSIBLE**: Firewall drops produce identical resolver timeout symptoms.
 
 ---
 
-## 12. Configuration (`config.yaml`)
+## 6. Machine Learning Methodology (Zero Temporal Leakage)
 
-Key parameters can be configured in `config.yaml`:
-```yaml
-storage:
-  db_path: "data/autopsy.db"
+To defend architectural choices during examination, 5 distinct diagnostic models are compared:
 
-agent:
-  probe_interval_seconds: 10.0
-  ping_targets: ["auto_gateway", "8.8.8.8", "1.1.1.1"]
-  traceroute_targets: ["8.8.8.8"]
-  sniffer:
-    interface: null # null selects default interface
-    bpf_filter: "ip or arp"
+1. **Static Threshold Baseline**: Fixed heuristic thresholds (fails to adapt across heterogeneous networks).
+2. **Expert Rule System**: 8-rule deterministic expert classifier.
+3. **CART Decision Tree (Deployed Primary)**: White-box model (`max_depth=6`) providing 100% auditable if-then decision paths exported to `data/decision_tree_rules.txt`.
+4. **Random Forest Benchmark**: 100-tree ensemble providing the empirical accuracy upper bound.
+5. **Hybrid Fusion**: Multi-tier consensus architecture combining expert rules and Decision Tree verification.
 
-engine:
-  window_duration_seconds: 20.0
-  eval_interval_seconds: 10.0
-  baseline:
-    warmup_samples: 15
-    z_threshold: 3.0
-    alpha_ema: 0.05
-```
+### Preventing Temporal Data Leakage
+Standard train/test splits that randomly shuffle rolling time windows cause severe data leakage because adjacent 20-second windows from the same incident are auto-correlated. Network Autopsy strictly enforces **`GroupShuffleSplit` grouped by unique experiment run ID**, ensuring that entire incident episodes are placed exclusively into either the training or testing partition.
 
 ---
 
-## 13. Running Live Monitoring
+## 7. Safe Fault Injection Sandbox
 
-Start the full system (active probes, sniffer, diagnosis loop, socket proxy, and web server):
-```bash
-python main.py
-```
-Open your browser to:
-- **Live Dashboard**: `http://127.0.0.1:8000/`
-- **Validation Lab**: `http://127.0.0.1:8000/static/dashboard.html#validation`
-- **API Documentation**: `http://127.0.0.1:8000/docs`
+To enable safe laboratory testing without risking university or home Wi-Fi interfaces:
+- **Loopback Socket Proxy**: Runs `ControlledNetworkTarget` on `127.0.0.1:8085`.
+- **Supported Scenarios**: Latency spikes, jitter/bufferbloat, socket packet loss, TCP connection refusal, HTTP 503 errors, DNS timeouts, and routing hops shifts.
+- **Safe Mode Protection**: Injections are restricted to the local loopback proxy target. Zero modifications are made to the host's physical network adapter.
+- **Automatic Cleanup**: On server shutdown or crash, all proxy delays and faults are automatically reset to clean defaults.
 
 ---
 
-## 14. Running Demo & Simulation Mode
+## 8. Empirical Validation vs. Synthetic Benchmark
 
-For offline classroom demonstrations without live network access, the system includes calibrated deterministic scenarios:
-```bash
-# Execute synthetic unit benchmark across all 9 fault modes
-python sandbox/validation_runner.py --mode synthetic --trials 10
-```
+The platform strictly separates real empirical socket experiments from synthetic benchmarks:
 
----
-
-## 15. Running Safe Fault Injection
-
-The platform supports 10 controlled fault scenarios:
-
-| Scenario ID | Name | Mechanism | Expected Affected Layer |
-|:---|:---|:---|:---:|
-| `HIGH_LATENCY` | Latency Spike (+180ms) | Socket buffer delay | Network |
-| `JITTER` | RTT Jitter (35ms variance) | Variable sleep variance | Network |
-| `PACKET_LOSS` | Packet Loss (25%) | Random socket drop | Network / Transport |
-| `BANDWIDTH_THROTTLING` | Bandwidth Throttle (128 kbps) | Token bucket rate limit | Network |
-| `DNS_FAILURE` | DNS Resolver Timeout | Resolver sinkhole redirection | Application / Transport |
-| `HTTP_SERVICE_FAILURE` | HTTP 503 Server Crash | Target returns HTTP 503 | Application |
-| `TCP_SERVICE_FAILURE` | TCP Port Blocked / Reset | Connection refusal / RST | Transport |
-| `ROUTE_CHANGE` | Route Flap / Path Shift | Synthetic path hop mutation | Network |
-| `INTERMITTENT_PACKET_LOSS` | Intermittent Burst Drop (40%) | Oscillating drop cycle | Network / Data-Link |
-| `COMBINED_FAULT` | Latency + Loss Compound Fault | Simultaneous delay & drop | Network / Transport |
-
----
-
-## 16. Running Validation Experiments
-
-Execute end-to-end empirical trials against real degraded sockets:
-```bash
-# Run 1 trial per scenario against real OS sockets
-python sandbox/validation_runner.py --mode real --trials 1
-
-# Run 5 trials per scenario
-python sandbox/validation_runner.py --mode real --trials 5
-```
-
----
-
-## 17. Evaluation Methodology
-
-Network Autopsy strictly differentiates four separate performance metrics:
-1. **Detection Accuracy**: Did the system recognize that a non-normal network condition occurred?
-2. **Diagnosis Accuracy**: Did the system correctly classify the specific root cause (e.g. Gateway Congestion vs Upstream ISP)?
-3. **Localization Accuracy**: Did the hop-level analysis identify the correct hop or regional boundary?
-4. **Recovery Detection Accuracy**: Did the system verify that metrics returned to baseline after fault removal?
-
----
-
-## 18. Empirical Results
-
-### Real Network Experiments (Degraded OS Sockets)
-*Empirical evaluation executed across live OS network sockets (persisted in `data/real_validation_results.json`):*
-
+### Empirical Validation (Real Degraded Sockets)
+Executed against genuine degraded OS sockets on `127.0.0.1:8085` (persisted in `data/real_validation_results.json`):
 - **Total Empirical Trials**: 10
 - **Diagnosis Accuracy**: 70.0%
 - **Detection Rate**: 30.0%
@@ -291,68 +205,162 @@ Network Autopsy strictly differentiates four separate performance metrics:
 - **Mean Detection Latency**: 15.73s
 - **Mean Recovery Time**: 16.25s
 
-### Synthetic Scenario Benchmark (Unit Tests)
-*Algorithmic unit tests evaluated on calibrated feature vectors (`data/synthetic_validation_results.json`):*
+### Algorithm Benchmark (Synthetic Feature Distributions)
+Algorithmic unit tests evaluated against calibrated feature distributions (`data/synthetic_validation_results.json`):
 - **Total Synthetic Trials**: 90 (10 per class)
 - **Overall Accuracy**: 88.9%
 - **Per-Class F1-Scores**:
-  - DNS Failure: 1.000
-  - Upstream ISP Fault: 1.000
-  - Target Service Down: 1.000
-  - Lossy Link Congestion: 1.000
-  - Packet Integrity (CRC): 1.000
-  - Route Flap: 1.000
-  - Application Layer Failure: 1.000
+  - DNS Failure: 1.00
+  - Upstream ISP Fault: 1.00
+  - Target Service Down: 1.00
+  - Lossy Link Congestion: 1.00
+  - Packet Integrity Indicators: 1.00
+  - Route Flap: 1.00
+  - Application Layer Failure: 1.00
 
 ---
 
-## 19. Machine Learning Methodology & Zero Data Leakage
+## 9. User Interface Design System
 
-### 5-Model Comparative Evaluation
-To defend architectural choices during viva, 5 distinct diagnostic models are compared:
-
-1. **Static Threshold Baseline**: Fixed heuristic thresholds (fails on network-specific baselines).
-2. **Rule-Only Classifier**: 8-rule expert system.
-3. **CART Decision Tree (Deployed)**: White-box model (`max_depth=6`) providing 100% auditable if-then rules exported to `data/decision_tree_rules.txt`.
-4. **Random Forest Benchmark**: 100-tree ensemble validation upper bound.
-5. **Hybrid Rules + Decision Tree**: Multi-tier consensus architecture.
-
-### Data Leakage Prevention
-Standard train/test splits that randomly shuffle rolling time windows cause severe data leakage because adjacent 20-second windows from the same incident are auto-correlated. Network Autopsy uses **`GroupShuffleSplit` grouped by unique experiment run ID**, ensuring that entire incident episodes are placed exclusively into either the training or testing partition.
-
----
-
-## 20. Known Limitations & Academic Honesty
-
-1. **Ethernet FCS / CRC Visibility**: Standard OS socket APIs and Npcap do not expose the physical Ethernet 4-byte Frame Check Sequence (FCS) because network interface cards strip FCS before passing frames to the OS driver. The platform terms this feature **"Packet Integrity Indicators (IP/TCP Checksum Verification)"** rather than claiming physical layer FCS detection.
-2. **Traceroute Granularity**: Intermediate routers that rate-limit ICMP time-exceeded messages cannot be localized to a single hop with high confidence. The platform explicitly tags these as `likely region: hop X–Y (unconfirmed)`.
-3. **Safe Mode Default**: To prevent disruption to university or home Wi-Fi interfaces, the platform defaults to isolated socket proxy fault injection rather than kernel-level `tc qdisc` modifications.
+The application interface follows a modern light design system:
+- **Palette**: `#F8FAFC` background, crisp white cards, `#E2E8F0` subtle borders, `#0F172A` high-contrast typography, `#2563EB` professional blue accent.
+- **Typography**: Inter for all user-facing interface text; JetBrains Mono strictly for IP addresses, technical IDs, and logs.
+- **Left Sidebar Navigation**: 7 dedicated functional areas:
+  1. **Overview**: Hero Health card, User Impact, Current Issue, 6 metric cards, path preview, timeline charts.
+  2. **Network Path**: Full horizontal pipeline (`YOU` ➔ `LOCAL GATEWAY` ➔ `INTERNET` ➔ `DESTINATION`) with clickable node drill-down side panel.
+  3. **Incidents**: Correlated incident log with status filters and post-mortem autopsy reports.
+  4. **Diagnostics**: Manual diagnostic trigger, "Why We Think This" reasoning box, and multi-signal evidence fusion table.
+  5. **Test a Problem**: Safe sandbox fault simulation with 1-click Professor Demo shortcuts, 7-stage live stepper, and ground truth outcome verification.
+  6. **Reports**: Post-mortem incident archive with browser print and PDF export layout (`@media print`).
+  7. **System**: Subsystem readiness matrix, local agent status, and hardware/driver capture transparency notes.
 
 ---
 
-## 21. Computer Networks Syllabus Mapping
+## 10. Installation & Setup
+
+### 10.1 Local Setup (Windows, Linux, macOS)
+```bash
+# 1. Clone repository
+git clone https://github.com/Saicharan-Banothu/CN-CBP.git
+cd CN-CBP
+
+# 2. Create virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# 3. Install dependencies
+pip install -r requirements.txt
+
+# 4. Launch unified platform
+python main.py
+```
+Open **`http://127.0.0.1:8000/`** in any web browser.
+
+### 10.2 WSL2 / Linux Setup
+```bash
+sudo apt-get update && sudo apt-get install -y libpcap-dev iproute2
+pip install -r requirements.txt
+python main.py
+```
+
+### 10.3 Packet Capture Permissions
+- **Windows**: Install [Npcap](https://npcap.com/) with **"WinPcap API-compatible Mode"** enabled for layer-2 packet sniffing. If Npcap is absent, Network Autopsy gracefully falls back to raw socket mode without failing.
+- **Linux**: Grant packet capture capabilities to Python without running as full root:
+  ```bash
+  sudo setcap cap_net_raw,cap_net_admin=eip $(readlink -f $(which python))
+  ```
+
+---
+
+## 11. Running Validation Experiments
+
+Execute end-to-end empirical trials against real degraded sockets:
+```bash
+# Run 1 real trial per scenario against degraded sockets
+python sandbox/validation_runner.py --mode real --trials 1
+
+# Run synthetic algorithm benchmark across all 9 fault classes
+python sandbox/validation_runner.py --mode synthetic --trials 10
+```
+
+---
+
+## 12. Automated Test Suite
+
+Verify system integrity using pytest:
+```bash
+python -m pytest -v tests/test_engine.py
+```
+
+**Test Coverage (7 Passing Unit Tests)**:
+1. `test_windowing_aggregation`: Verifies rolling-window feature aggregation correctness.
+2. `test_adaptive_baseline_learner`: Verifies warm-up maturity and statistical $3\sigma$ anomaly triggers.
+3. `test_rule_engine_rules`: Verifies 8-rule expert classifier firing conditions and translation fields.
+4. `test_hop_confidence_scoring`: Verifies traceroute rate-limiting suppression and multi-signal corroboration.
+5. `test_incident_deduplication_lifecycle`: Verifies incident key reuse and recovery state machine transitions.
+6. `test_safe_fault_proxy_socket_degradation`: Verifies socket proxy delay injection and HTTP 503 responses.
+7. `test_ml_leakage_free_split`: Verifies `GroupShuffleSplit` across distinct incident episodes.
+
+---
+
+## 13. Professor Demonstration Walkthrough (Viva Script)
+
+Follow this 5-minute sequence for laboratory or viva evaluation:
+
+1. **Open Overview**: Show the clean light-themed dashboard on `http://127.0.0.1:8000/`. Highlight the **Hero Health Status** (`Healthy 100/100`), **User Impact** summary, and **6 Metric Cards** (Delay, Stability, Loss, DNS, Web, Retransmissions).
+2. **Toggle Professor Mode**: Click **Technical View** in the top bar. Point out the sub-text technical drawers revealing raw parameters (`RFC 3393 jitter`, `TTFB`, `UDP 53 query time`). Click **User View** to switch back.
+3. **Inspect Network Path**: Navigate to **Network Path** in the sidebar. Click on the **LOCAL GATEWAY** node (`192.168.0.1`). Show the slide-in inspection panel displaying real round-trip delay, 0% loss, and "Why We Think This" bullet points. Close the panel.
+4. **Start Controlled Fault Experiment**:
+   - Navigate to **Test a Problem**.
+   - Click the shortcut button: **⚡ High Packet Loss (30%)**.
+   - Click **🧪 Start Test**.
+   - Watch the **7-Stage Live Stepper** advance: `Prepare` ➔ `Apply` ➔ `Collect` ➔ `Analyze` ➔ `Diagnose` ➔ `Recover` ➔ `Done`.
+5. **Inspect Live Diagnosis**:
+   - Return to **Overview** or **Diagnostics**.
+   - Observe the health score drop and the current issue alert box activate.
+   - Show the **"Why We Think This"** box with independent signal agreement and alternative hypotheses rejected.
+6. **Verify Recovery**:
+   - Click **🔄 Reset Baseline**.
+   - Show the incident transition to `RESOLVED` with verified recovery time.
+7. **Inspect Reports & Validation**:
+   - Navigate to **Reports** and open the post-mortem incident report.
+   - Navigate to **System** and show the verified Subsystem Readiness Matrix.
+
+---
+
+## 14. Academic Honesty & Known Limitations
+
+1. **Hardware Ethernet FCS vs. Software Checksums**: Standard operating system socket APIs and Npcap do not expose physical 4-byte Ethernet Frame Check Sequences (FCS) because hardware network cards strip FCS prior to passing frames to driver memory. Network Autopsy inspects 16-bit Internet checksums (RFC 1071) across IP headers, TCP segments, and UDP datagrams. The documentation accurately reflects this distinction.
+2. **Traceroute Granularity**: Intermediate routers that rate-limit ICMP TTL-Exceeded responses cannot be pinpointed to an exact router without corroborating telemetry. Network Autopsy explicitly tags these regions as `likely region: hop X–Y (unconfirmed)`.
+3. **Cloud Container Visibility**: In public cloud environments (such as Render), raw ICMP echo packets are blocked by container firewalls. The platform transparently utilizes TCP transport ping fallbacks and labels cloud deployments as **`[☁️ CLOUD DEMO]`**.
+
+---
+
+## 15. Computer Networks Syllabus Mapping
 
 | Syllabus Concept | Implementation in Network Autopsy | Source File |
 |:---|:---|:---|
-| **OSI Reference Model** | Multi-layer diagnosis mapping symptoms to Data-Link, Network, Transport, and Application layers. | `engine/rules.py` |
-| **Error Detection & Checksums** | Software recalculation and verification of 16-bit Internet checksums (RFC 1071) for IP, TCP, and UDP headers. | `agent/passive_capture.py` |
-| **Flow Control & ARQ** | Detection of duplicate ACKs (Fast Retransmit trigger, RFC 5681) and TCP retransmission tracking. | `agent/passive_capture.py` |
-| **IPv4 Header & TTL** | TTL-incrementing traceroute probes measuring hop-by-hop round-trip delay. | `agent/active_probes.py` |
-| **Routing & Path Flapping** | Route change detection comparing ordered hop IP sequences across consecutive traceroute runs. | `engine/windowing.py` |
-| **Transport Layer Handshakes** | Direct TCP 3-way handshake latency (SYN ➔ SYN-ACK) and connection refusal (RST) detection. | `agent/active_probes.py` |
-| **Application Layer Protocols** | Wire-format DNS query resolution and raw HTTP/1.1 transaction measurement with TTFB tracking. | `agent/active_probes.py` |
-| **Network Emulation & Queuing** | Token bucket rate limiting, jitter simulation, and socket-level packet drop injection. | `sandbox/local_fault_proxy.py` |
+| **OSI Reference Model** | Multi-layer fault isolation across Physical/Data-Link, Network, Transport, and Application layers. | [`engine/rules.py`](file:///c:/Users/sai%20charan/OneDrive/Desktop/CN_CBP/engine/rules.py) |
+| **Error Detection & Checksums** | Software verification of 16-bit Internet checksums (RFC 1071) for IP, TCP, and UDP headers. | [`agent/passive_capture.py`](file:///c:/Users/sai%20charan/OneDrive/Desktop/CN_CBP/agent/passive_capture.py) |
+| **Flow Control & Congestion** | Detection of duplicate ACKs (RFC 5681 Fast Retransmit) and TCP sequence retransmission tracking. | [`agent/passive_capture.py`](file:///c:/Users/sai%20charan/OneDrive/Desktop/CN_CBP/agent/passive_capture.py) |
+| **IPv4 Header & TTL** | TTL-incrementing traceroute probes measuring hop-by-hop round-trip propagation delay. | [`agent/active_probes.py`](file:///c:/Users/sai%20charan/OneDrive/Desktop/CN_CBP/agent/active_probes.py) |
+| **Routing & Path Dynamics** | Route change detection comparing ordered hop IP sequences across consecutive traceroute runs. | [`engine/windowing.py`](file:///c:/Users/sai%20charan/OneDrive/Desktop/CN_CBP/engine/windowing.py) |
+| **Transport Layer Handshakes** | Direct TCP 3-way handshake measurement (SYN ➔ SYN-ACK) and connection refusal (RST) detection. | [`agent/active_probes.py`](file:///c:/Users/sai%20charan/OneDrive/Desktop/CN_CBP/agent/active_probes.py) |
+| **Application Layer Protocols** | Wire-format DNS resolution and raw HTTP/1.1 transaction measurement with TTFB tracking. | [`agent/active_probes.py`](file:///c:/Users/sai%20charan/OneDrive/Desktop/CN_CBP/agent/active_probes.py) |
+| **Network Emulation & Queuing** | Token bucket rate limiting, delay variance simulation, and socket-level packet drop injection. | [`sandbox/local_fault_proxy.py`](file:///c:/Users/sai%20charan/OneDrive/Desktop/CN_CBP/sandbox/local_fault_proxy.py) |
 
 ---
 
-## 22. Project Directory Structure
+## 16. Project Structure
 
 ```
 CN_CBP/
 ├── README.md                      # Comprehensive academic & operational documentation
 ├── requirements.txt               # Pinned Python dependencies
 ├── config.yaml                    # System configuration parameters
-├── main.py                        # Unified runtime entry point
+├── main.py                        # Unified runtime orchestrator & entry point
+├── render.yaml                    # Render cloud deployment specification
+├── run.sh                         # Unix startup script
 ├── agent/
 │   ├── active_probes.py           # ICMP, Traceroute, TCP, DNS, HTTP active probe implementations
 │   ├── passive_capture.py         # Scapy packet sniffer (retransmissions, dup ACKs, checksums)
@@ -363,10 +371,10 @@ CN_CBP/
 ├── engine/
 │   ├── windowing.py               # 20-second rolling window feature aggregation
 │   ├── baseline.py                # Adaptive baseline learner (Mean, StdDev, Median, EWMA)
-│   ├── rules.py                   # 8-rule expert root-cause diagnosis classifier
+│   ├── rules.py                   # 8-rule expert root-cause diagnosis classifier & translations
 │   ├── hop_confidence.py          # Multi-run hop attribution confidence scorer
 │   ├── ml_classifier.py           # 5-model ML comparison & leakage-free group evaluation
-│   └── report_generator.py        # Incident lifecycle manager & Jinja2 autopsy report generator
+│   └── report_generator.py        # Incident lifecycle manager & post-mortem report generator
 ├── sandbox/
 │   ├── fault_injection.py         # SafeFaultController with safe mode & dry-run protections
 │   ├── local_fault_proxy.py       # ControlledNetworkTarget socket proxy (port 8085)
@@ -374,11 +382,11 @@ CN_CBP/
 │   ├── route_flap_sim.py          # Route oscillation simulator
 │   └── validation_runner.py       # End-to-end empirical and synthetic experiment runner
 ├── webapp/
-│   ├── server.py                  # FastAPI REST endpoints & diagnostics
+│   ├── server.py                  # FastAPI REST endpoints, status API, and static file mount
 │   ├── static/
-│   │   ├── dashboard.html         # Live operations dashboard
-│   │   ├── dashboard.js           # Live polling, dynamic topology, & Chart.js controller
-│   │   └── style.css              # Responsive dark-mode engineering theme
+│   │   ├── dashboard.html         # 7-section professional light-themed dashboard
+│   │   ├── dashboard.js           # Centralized state controller, dynamic topology & Chart.js
+│   │   └── style.css              # Observability light design system & CSS tokens
 │   └── templates/
 │       └── incident_report.html   # Standalone HTML Autopsy Post-Mortem report template
 ├── data/
@@ -393,49 +401,7 @@ CN_CBP/
 
 ---
 
-## 23. Automated Test Suite
+## 17. License & Credits
 
-Run the full automated test suite:
-```bash
-python -m pytest -v tests/test_engine.py
-```
-**Test Coverage**:
-- `test_windowing_aggregation`: Verifies mathematical accuracy of rolling-window metric aggregation.
-- `test_adaptive_baseline_learner`: Verifies warm-up sample handling and 3σ deviation anomaly triggers.
-- `test_rule_engine_rules`: Verifies expert system rule activation across all fault conditions.
-- `test_hop_confidence_scoring`: Verifies single-run capping, regional labeling, and multi-signal corroboration.
-- `test_incident_deduplication_lifecycle`: Verifies deduplication key reuse and recovery state transition.
-- `test_safe_fault_proxy_socket_degradation`: Verifies socket latency injection and HTTP 503 status code responses.
-- `test_ml_leakage_free_split`: Verifies `GroupShuffleSplit` across incident runs.
-
----
-
-## 24. Professor Demonstration Script (Viva Walkthrough)
-
-Follow this 5-minute sequence for laboratory or viva evaluation:
-
-1. **Launch Platform**: Run `python main.py` and open `http://127.0.0.1:8000/`.
-2. **Demonstrate Healthy State**:
-   - Show the **Health Score Card**: 100/100, Grade A, "Network Optimal".
-   - Show the **Dynamic Network Path Topology**: `Local Host` ➔ `Gateway` ➔ `Intermediate Hops` ➔ `Target Reference`, all tagged `HEALTHY`.
-   - Show the **Telemetry Tiles**: Latency within baseline, 0.0% loss.
-3. **Inspect Diagnostics**:
-   - Click `🖥️ Diagnostics` in the top header.
-   - Show the operating system, Python version, packet capture mode, and safe proxy state on port 8085.
-4. **Execute Controlled Fault in Validation Lab**:
-   - Scroll to **Controlled Fault Validation Lab**.
-   - Select scenario: `Packet Loss (25%)` on `127.0.0.1:8085`.
-   - Click `🧪 Run Experiment Trial`.
-   - Watch the 5-step live trial stepper advance: `Injected` ➔ `Degraded` ➔ `Probed` ➔ `Diagnosed` ➔ `Recovered`.
-5. **Inspect Live Degradation**:
-   - Observe the live health score drop and inspect the **Deductions Breakdown Drawer**.
-   - Point out the active incident banner: `🚨 ACTIVE INCIDENT DETECTED`.
-6. **Open Autopsy Report**:
-   - Click `🔬 Inspect Autopsy Report`.
-   - Demonstrate the **Multi-Signal Evidence Matrix**, **Incident Timeline**, and **Remediation Plan**.
-7. **Verify Recovery**:
-   - Click `🔄 Reset Baseline`.
-   - Observe the active incident transition to `RESOLVED` with duration recorded.
-8. **Show Academic Validation & ML Tabs**:
-   - Under **Validation Results**, show the **Real Network Experiments** tab (empirical metrics) vs. the **Synthetic Benchmark** tab.
-   - Under the **ML Comparison** tab, show the `GroupShuffleSplit` leakage-prevention methodology and the white-box CART Decision Tree rules.
+Created as a B.Tech Computer Networks Capstone Project by **Sai Charan Banothu**.  
+Licensed under the MIT License.

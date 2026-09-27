@@ -12,7 +12,7 @@ Evaluates window telemetry against 8 expert diagnostic rules with structured evi
 7. Route flap / path change
 8. Application-layer failure at target service
 """
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Any, Optional
 from storage.models import EvidenceItem
 from engine.windowing import WindowFeatures
@@ -30,6 +30,12 @@ class RuleDiagnosis:
     remediation_text: str
     alternative_hypotheses: List[str]
     fired: bool = True
+    user_description: str = ""
+    technical_description: str = ""
+    user_impact: str = ""
+    why_points: List[str] = field(default_factory=list)
+    confidence_explanation: str = ""
+    alternative_hypotheses_structured: List[Dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -119,12 +125,13 @@ class RuleClassifier:
                     status="ANOMALOUS",
                 ))
 
+            calc_conf = min(round(conf, 2), 0.95)
             diagnoses.append(
                 RuleDiagnosis(
                     rule_name="Local Gateway/Wi-Fi Congestion",
                     cause_label="Local gateway / Wi-Fi channel congestion or local router overload",
                     affected_layer="Data-Link / Network",
-                    confidence_score=min(round(conf, 2), 0.95),
+                    confidence_score=calc_conf,
                     evidence_items=[e.to_dict() for e in evidence],
                     evidence_summary={
                         "gateway_rtt_ms": features.gateway_latency,
@@ -139,6 +146,29 @@ class RuleClassifier:
                     alternative_hypotheses=[
                         "Ethernet cable or switch port duplex mismatch",
                         "High bandwidth torrent/stream saturating local uplink",
+                    ],
+                    user_description="Your connection to the local router or Wi-Fi gateway is congested or experiencing packet loss.",
+                    technical_description="First-hop link saturation with elevated RTT and packet drop at gateway / AP interface.",
+                    user_impact="Streaming video may freeze, web pages will load slowly, and real-time gaming or video calls may drop frames.",
+                    why_points=[
+                        f"Response time to your local router increased to {features.gateway_latency or features.hop1_rtt} ms (normal is < 10 ms).",
+                        f"Packet loss of {max(features.gateway_loss, features.hop1_loss)}% detected at the very first hop.",
+                        "Direct gateway measurements isolate the slowdown before traffic leaves your local building.",
+                    ],
+                    confidence_explanation=f"{int(calc_conf * 100)}% confidence: {len(evidence)} independent signals agree, isolating the slowdown to your first hop router.",
+                    alternative_hypotheses_structured=[
+                        {
+                            "hypothesis": "Ethernet cable or switch port duplex mismatch",
+                            "probability": 0.15,
+                            "status": "REJECTED",
+                            "reason": "Loss and delay occurred intermittently rather than as a permanent line-rate cap.",
+                        },
+                        {
+                            "hypothesis": "High bandwidth torrent or video stream on local network",
+                            "probability": 0.25,
+                            "status": "PLAUSIBLE_CONTRIBUTOR",
+                            "reason": "Bufferbloat matches symptom of sudden queue delay on gateway.",
+                        },
                     ],
                 )
             )
@@ -175,13 +205,14 @@ class RuleClassifier:
             conf = 0.70
             if features.external_loss > 30.0:
                 conf += 0.15
+            calc_conf = min(round(conf, 2), 0.95)
 
             diagnoses.append(
                 RuleDiagnosis(
                     rule_name="Fault at or Beyond Hop N",
                     cause_label="Upstream ISP routing degradation or intermediate carrier link failure",
                     affected_layer="Network",
-                    confidence_score=min(round(conf, 2), 0.95),
+                    confidence_score=calc_conf,
                     evidence_items=[e.to_dict() for e in evidence],
                     evidence_summary={
                         "gateway_rtt_ms": features.gateway_latency,
@@ -196,6 +227,29 @@ class RuleClassifier:
                     alternative_hypotheses=[
                         "Undersea cable transit latency spike",
                         "Intermediate BGP peer congestion",
+                    ],
+                    user_description="A problem was detected in the upstream internet provider or intermediate network path.",
+                    technical_description="Transit carrier degradation or core routing bottleneck at intermediate hop segment.",
+                    user_impact="Access to external websites and cloud services is degraded, while your local router connection is working normally.",
+                    why_points=[
+                        "Your local home/office gateway responds quickly with 0% loss.",
+                        f"External latency increased to {features.external_latency} ms with {features.external_loss}% packet loss.",
+                        "Path measurements isolate the degradation to upstream carrier hops beyond your premises.",
+                    ],
+                    confidence_explanation=f"{int(calc_conf * 100)}% confidence: local link verified healthy, isolating failure to upstream ISP or transit carrier.",
+                    alternative_hypotheses_structured=[
+                        {
+                            "hypothesis": "Local router hardware failure",
+                            "probability": 0.05,
+                            "status": "REJECTED",
+                            "reason": "First hop responds quickly with 0% loss, disproving local router failure.",
+                        },
+                        {
+                            "hypothesis": "Intermediate BGP peer congestion",
+                            "probability": 0.30,
+                            "status": "PLAUSIBLE",
+                            "reason": "Sudden latency step between hop 3 and 4 matches peering congestion.",
+                        },
                     ],
                 )
             )
@@ -230,12 +284,13 @@ class RuleClassifier:
                 ),
             ]
             conf = 0.80 if features.dns_loss_pct < 50.0 else 0.95
+            calc_conf = round(conf, 2)
             diagnoses.append(
                 RuleDiagnosis(
                     rule_name="DNS Failure",
                     cause_label="DNS resolver timeout, misconfiguration, or upstream DNS server failure",
                     affected_layer="Application",
-                    confidence_score=round(conf, 2),
+                    confidence_score=calc_conf,
                     evidence_items=[e.to_dict() for e in evidence],
                     evidence_summary={
                         "dns_latency_ms": features.dns_latency,
@@ -249,6 +304,29 @@ class RuleClassifier:
                     alternative_hypotheses=[
                         "Outbound UDP port 53 firewall rule",
                         "Local DNS cache daemon poisoned or deadlocked",
+                    ],
+                    user_description="Your device can reach the internet, but domain-name lookup (DNS) is failing or timing out.",
+                    technical_description="Domain Name System resolution timeout with intact direct IP layer reachability.",
+                    user_impact="Entering website names like google.com fails to load, even though your internet connection is active.",
+                    why_points=[
+                        "Internet connectivity is healthy — direct IP ping requests succeed without loss.",
+                        f"DNS queries timed out or response time increased to {features.dns_latency} ms.",
+                        f"DNS failure rate reached {features.dns_loss_pct}%.",
+                    ],
+                    confidence_explanation=f"{int(calc_conf * 100)}% confidence: direct IP connectivity is healthy while domain name resolution fails.",
+                    alternative_hypotheses_structured=[
+                        {
+                            "hypothesis": "Complete network disconnection",
+                            "probability": 0.05,
+                            "status": "REJECTED",
+                            "reason": "Direct IP pings to 8.8.8.8 and 1.1.1.1 succeed with low latency.",
+                        },
+                        {
+                            "hypothesis": "Outbound UDP port 53 firewall rule",
+                            "probability": 0.20,
+                            "status": "PLAUSIBLE",
+                            "reason": "Firewall dropping UDP 53 produces identical timeout symptoms.",
+                        },
                     ],
                 )
             )
@@ -282,12 +360,13 @@ class RuleClassifier:
                     status="NORMAL",
                 ),
             ]
+            calc_conf = 0.88
             diagnoses.append(
                 RuleDiagnosis(
                     rule_name="Target Service Down / Firewall Block",
                     cause_label="Target service process inactive, port blocked by firewall, or ACL reject",
                     affected_layer="Transport",
-                    confidence_score=0.88,
+                    confidence_score=calc_conf,
                     evidence_items=[e.to_dict() for e in evidence],
                     evidence_summary={
                         "tcp_connect_loss_pct": features.tcp_connect_loss_pct,
@@ -300,6 +379,29 @@ class RuleClassifier:
                     alternative_hypotheses=[
                         "Ingress security group block",
                         "Service listening only on localhost (127.0.0.1) instead of 0.0.0.0",
+                    ],
+                    user_description="The destination server or web service is not accepting connections, although network connectivity is working.",
+                    technical_description="TCP port connection refused (RST) or dropped by firewall with normal ICMP echo reachability.",
+                    user_impact="The specific app or website cannot be reached, but other internet sites and network connections work fine.",
+                    why_points=[
+                        "Network ping to the destination server responds normally.",
+                        "TCP connection attempts to the target port are immediately refused or timed out.",
+                        "No packet loss on intermediate network hops.",
+                    ],
+                    confidence_explanation=f"{int(calc_conf * 100)}% confidence: destination host responds to pings, but rejects TCP connections.",
+                    alternative_hypotheses_structured=[
+                        {
+                            "hypothesis": "General internet outage",
+                            "probability": 0.02,
+                            "status": "REJECTED",
+                            "reason": "Host IP responds to ping probes without loss.",
+                        },
+                        {
+                            "hypothesis": "Service listening only on loopback",
+                            "probability": 0.30,
+                            "status": "PLAUSIBLE",
+                            "reason": "Process may be running but bound to 127.0.0.1 instead of public IP.",
+                        },
                     ],
                 )
             )
@@ -334,12 +436,13 @@ class RuleClassifier:
                 ),
             ]
             conf = 0.75 if (retrans_elevated and dup_acks_elevated) else 0.65
+            calc_conf = round(conf, 2)
             diagnoses.append(
                 RuleDiagnosis(
                     rule_name="Network Congestion / Lossy Link",
                     cause_label="Packet loss and out-of-order delivery inducing TCP fast-retransmits and throughput collapse",
                     affected_layer="Transport",
-                    confidence_score=round(conf, 2),
+                    confidence_score=calc_conf,
                     evidence_items=[e.to_dict() for e in evidence],
                     evidence_summary={
                         "retrans_count": features.retrans_count,
@@ -353,6 +456,23 @@ class RuleClassifier:
                     alternative_hypotheses=[
                         "Asymmetric path causing extreme packet reordering",
                         "Transient microburst packet loss at network switch",
+                    ],
+                    user_description="Your connection is experiencing packet loss, congestion, and dropped data transmissions.",
+                    technical_description="Multi-parameter congestion with TCP fast-retransmits and throughput collapse.",
+                    user_impact="Web downloads and streaming will feel stuttery or slow due to repeated data retransmissions.",
+                    why_points=[
+                        f"Passive capture detected {features.retrans_count} TCP retransmissions and {features.dup_ack_count} duplicate ACKs.",
+                        "Data packets are being dropped in flight, requiring sender retransmission.",
+                        "Throughput is throttled by TCP congestion control backoff.",
+                    ],
+                    confidence_explanation=f"{int(calc_conf * 100)}% confidence: corroborated by active packet loss and passive TCP retransmission analysis.",
+                    alternative_hypotheses_structured=[
+                        {
+                            "hypothesis": "Extreme packet reordering without actual loss",
+                            "probability": 0.20,
+                            "status": "PLAUSIBLE",
+                            "reason": "Out-of-order packet delivery can trigger false duplicate ACKs.",
+                        },
                     ],
                 )
             )
@@ -373,12 +493,13 @@ class RuleClassifier:
                     status="ANOMALOUS",
                 )
             ]
+            calc_conf = 0.85
             diagnoses.append(
                 RuleDiagnosis(
                     rule_name="Packet Integrity / Checksum Mismatch",
                     cause_label="Hardware, Ethernet cable degradation, or electromagnetic interference causing corrupted bit sequences",
                     affected_layer="Physical / Data-Link",
-                    confidence_score=0.85,
+                    confidence_score=calc_conf,
                     evidence_items=[e.to_dict() for e in evidence],
                     evidence_summary={"checksum_errors": features.checksum_errors},
                     remediation_text=(
@@ -388,6 +509,23 @@ class RuleClassifier:
                     alternative_hypotheses=[
                         "NIC TCP checksum offloading artifact in packet capture",
                         "Defective switch ASIC port memory",
+                    ],
+                    user_description="Network packets are arriving with corrupted checksum data, indicating transport or cable errors.",
+                    technical_description="IP header and TCP/UDP payload checksum validation failures in passive traffic.",
+                    user_impact="Connections may randomly reset, files may fail checksum validation, or transfers may stall.",
+                    why_points=[
+                        f"Observed {features.checksum_errors} corrupted packet checksums in passive traffic.",
+                        "Bit errors detected before packet payload reached application layer.",
+                        "Physical cable degradation or hardware NIC driver corruption suspected.",
+                    ],
+                    confidence_explanation=f"{int(calc_conf * 100)}% confidence: mathematical checksum mismatch verified in captured frame headers.",
+                    alternative_hypotheses_structured=[
+                        {
+                            "hypothesis": "NIC checksum offload artifact",
+                            "probability": 0.25,
+                            "status": "POSSIBLE",
+                            "reason": "Certain network cards leave outgoing checksums blank until transmission.",
+                        },
                     ],
                 )
             )
@@ -408,12 +546,13 @@ class RuleClassifier:
                     status="ANOMALOUS",
                 )
             ]
+            calc_conf = 0.82
             diagnoses.append(
                 RuleDiagnosis(
                     rule_name="Route Flap / Path Change",
                     cause_label="BGP or internal gateway routing instability causing path oscillation and transient packet drops",
                     affected_layer="Network",
-                    confidence_score=0.82,
+                    confidence_score=calc_conf,
                     evidence_items=[e.to_dict() for e in evidence],
                     evidence_summary={"hop_count": features.hop_count, "route_changed": True},
                     remediation_text=(
@@ -422,6 +561,23 @@ class RuleClassifier:
                     ),
                     alternative_hypotheses=[
                         "Equal-Cost Multi-Path (ECMP) load balancing hashing variation",
+                    ],
+                    user_description="The network path to the destination changed unexpectedly, causing momentary instability.",
+                    technical_description="Dynamic routing table hop mutation (BGP/OSPF route flap or automated link failover).",
+                    user_impact="Brief lag spikes or 1-2 second disconnections while the router selects a new network path.",
+                    why_points=[
+                        "Traceroute path sequence mutated dynamically between measurement cycles.",
+                        f"Active path length changed to {features.hop_count} hops vs established baseline.",
+                        "Routing table converged on alternate transit path.",
+                    ],
+                    confidence_explanation=f"{int(calc_conf * 100)}% confidence: hop IP sequence altered compared to cached topology baseline.",
+                    alternative_hypotheses_structured=[
+                        {
+                            "hypothesis": "Equal-Cost Multi-Path (ECMP) load balancing",
+                            "probability": 0.35,
+                            "status": "PLAUSIBLE",
+                            "reason": "Per-flow ECMP hashing can send packets across different equal-cost links.",
+                        },
                     ],
                 )
             )
@@ -460,12 +616,13 @@ class RuleClassifier:
                     status="NORMAL",
                 ),
             ]
+            calc_conf = 0.90
             diagnoses.append(
                 RuleDiagnosis(
                     rule_name="Application Layer Failure",
                     cause_label="Application server crash, internal 5xx error, or HTTP worker exhaustion",
                     affected_layer="Application",
-                    confidence_score=0.90,
+                    confidence_score=calc_conf,
                     evidence_items=[e.to_dict() for e in evidence],
                     evidence_summary={
                         "http_status_code": features.http_status_code,
@@ -480,7 +637,25 @@ class RuleClassifier:
                         "Upstream reverse proxy (Nginx) 502/504 gateway timeout",
                         "Database connection pool exhausted",
                     ],
+                    user_description="The network connection is working, but the destination web service is returning an error (HTTP 5xx).",
+                    technical_description="Application-level HTTP 500/502/503 error returned despite successful TCP handshake.",
+                    user_impact="The website displays an internal server error or server crash page, but your internet is working properly.",
+                    why_points=[
+                        "TCP connection handshake completed with normal latency.",
+                        f"Web server returned an HTTP error code ({features.http_status_code}).",
+                        "Network layer is healthy; problem is inside destination application code.",
+                    ],
+                    confidence_explanation=f"{int(calc_conf * 100)}% confidence: TCP connection succeeded, but the application server returned an error response.",
+                    alternative_hypotheses_structured=[
+                        {
+                            "hypothesis": "Reverse proxy gateway timeout (504)",
+                            "probability": 0.40,
+                            "status": "PLAUSIBLE",
+                            "reason": "Backend microservice may have crashed while proxy remains reachable.",
+                        },
+                    ],
                 )
             )
 
         return diagnoses
+

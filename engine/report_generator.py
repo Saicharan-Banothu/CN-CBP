@@ -102,11 +102,29 @@ class ReportGenerator:
 
         inc_key = self._generate_incident_key(cause, layer, hop_loc)
 
-        # Check for existing active incident to deduplicate
-        existing_incident = self.db.find_active_incident(inc_key)
+        user_desc = primary_rule.user_description if (primary_rule and primary_rule.user_description) else "Unusual network performance degradation observed."
+        tech_desc = primary_rule.technical_description if (primary_rule and primary_rule.technical_description) else cause
+        user_impact = primary_rule.user_impact if (primary_rule and primary_rule.user_impact) else "Internet services and applications may respond slowly or drop connections."
+        why_points = primary_rule.why_points if (primary_rule and primary_rule.why_points) else [
+            f"Active telemetry deviated from established baseline ({symptom_str})."
+        ]
+        conf_expl = primary_rule.confidence_explanation if (primary_rule and primary_rule.confidence_explanation) else f"{int(combined_conf*100)}% confidence based on multi-signal correlation."
+        alt_struct = primary_rule.alternative_hypotheses_structured if (primary_rule and primary_rule.alternative_hypotheses_structured) else []
+
+        exec_summary = (
+            f"On {time.strftime('%Y-%m-%d at %H:%M:%S', time.localtime(ts))}, Network Autopsy identified an incident: "
+            f"'{cause}' affecting the {layer} layer at {hop_loc} with {int(combined_conf * 100)}% confidence. "
+            f"{user_impact}"
+        )
 
         evidence = {
             "window_duration_s": features.duration_s,
+            "user_description": user_desc,
+            "technical_description": tech_desc,
+            "user_impact": user_impact,
+            "why_points": why_points,
+            "confidence_explanation": conf_expl,
+            "executive_summary": exec_summary,
             "metrics": {
                 "avg_latency_ms": features.avg_latency,
                 "max_latency_ms": features.max_latency,
@@ -134,8 +152,10 @@ class ReportGenerator:
                 "confidence": ml_conf,
             },
             "alternative_hypotheses": alternatives,
+            "alternative_hypotheses_structured": alt_struct,
         }
 
+        existing_incident = self.db.find_active_incident(inc_key)
         if existing_incident:
             # Deduplicate & Update existing incident state
             existing_incident.occurrence_count += 1
