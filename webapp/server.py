@@ -46,6 +46,7 @@ TEMPLATES_DIR = os.path.join(BASE_DIR, "webapp", "templates")
 DATA_DIR = os.path.join(BASE_DIR, "data")
 REAL_VALIDATION_PATH = os.path.join(DATA_DIR, "real_validation_results.json")
 SYNTHETIC_VALIDATION_PATH = os.path.join(DATA_DIR, "synthetic_validation_results.json")
+SEED_TRIALS_PATH = os.path.join(DATA_DIR, "real_trials_seed.json")
 
 app = FastAPI(
     title="Network Autopsy",
@@ -889,6 +890,16 @@ def get_validation_results():
         try:
             with open(REAL_VALIDATION_PATH, "r", encoding="utf-8") as f:
                 real_results = json.load(f)
+                if "diagnosis_accuracy" in real_results:
+                    real_results["diagnosis_accuracy_pct"] = round(real_results["diagnosis_accuracy"] * 100, 1)
+                if "detection_rate" in real_results:
+                    real_results["detection_rate_pct"] = round(real_results["detection_rate"] * 100, 1)
+                if "layer_accuracy" in real_results:
+                    real_results["layer_accuracy_pct"] = round(real_results["layer_accuracy"] * 100, 1)
+                if "recovery_detection_accuracy" in real_results:
+                    real_results["recovery_rate_pct"] = round(real_results["recovery_detection_accuracy"] * 100, 1)
+                if "localization_accuracy" in real_results:
+                    real_results["localization_accuracy_pct"] = round(real_results["localization_accuracy"] * 100, 1)
         except Exception as e:
             logger.warning(f"Failed to load real validation results: {e}")
 
@@ -902,6 +913,44 @@ def get_validation_results():
 
     # Also query SQLite experiments table for trial-by-trial logs
     recent_trials = db.get_experiment_records(limit=30)
+    if not recent_trials and os.path.exists(SEED_TRIALS_PATH):
+        try:
+            with open(SEED_TRIALS_PATH, "r", encoding="utf-8") as f:
+                seed_data = json.load(f)
+                for item in seed_data:
+                    exp = ExperimentRecord(
+                        experiment_id=item["experiment_id"],
+                        scenario_id=item["scenario_id"],
+                        fault_type=item.get("fault_type", item["scenario_id"]),
+                        target=item.get("target", "127.0.0.1:8085"),
+                        mode=item.get("mode", "REAL_NETWORK_SOCKETS"),
+                        severity=item.get("severity", "HIGH"),
+                        intensity_val=item.get("intensity_val", 0.0),
+                        start_time=item.get("start_time", time.time()),
+                        injection_time=item.get("injection_time", 0.0),
+                        recovery_time=item.get("recovery_time"),
+                        detection_time=item.get("detection_time"),
+                        diagnosis_time=item.get("diagnosis_time"),
+                        detection_latency_s=item.get("detection_latency_s"),
+                        recovery_duration_s=item.get("recovery_duration_s"),
+                        expected_cause=item.get("expected_cause", ""),
+                        expected_layer=item.get("expected_layer", "Network"),
+                        expected_location=item.get("expected_location", "Gateway"),
+                        predicted_cause=item.get("predicted_cause", ""),
+                        predicted_layer=item.get("predicted_layer", "Network"),
+                        predicted_location=item.get("predicted_location", ""),
+                        confidence=item.get("confidence", 0.8),
+                        correct_cause=item.get("correct_cause", False),
+                        correct_layer=item.get("correct_layer", True),
+                        correct_location=item.get("correct_location", True),
+                        evidence_json=json.dumps(item.get("evidence", {})),
+                        parameters_json=json.dumps(item.get("parameters", {})),
+                        status="COMPLETED",
+                    )
+                    db.insert_experiment_record(exp)
+            recent_trials = db.get_experiment_records(limit=30)
+        except Exception as e:
+            logger.warning(f"Failed to seed real trial records: {e}")
 
     return {
         "real_network_validation": real_results if real_results else {

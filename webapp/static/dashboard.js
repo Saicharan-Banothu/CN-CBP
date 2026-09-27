@@ -1187,28 +1187,89 @@ async function fetchValidationResults() {
         const latEl = document.getElementById("realEmpiricalMeanLat");
 
         if (totalEl) totalEl.textContent = real.total_trials !== undefined ? real.total_trials : 0;
-        if (accEl) accEl.textContent = real.diagnosis_accuracy_pct !== undefined ? `${real.diagnosis_accuracy_pct.toFixed(1)}%` : "--%";
-        if (detEl) detEl.textContent = real.detection_rate_pct !== undefined ? `${real.detection_rate_pct.toFixed(1)}%` : "--%";
-        if (recEl) recEl.textContent = real.recovery_rate_pct !== undefined ? `${real.recovery_rate_pct.toFixed(1)}%` : "--%";
+        
+        // Diagnosis Accuracy
+        let diagAccText = "--%";
+        if (real.diagnosis_accuracy_pct !== undefined) {
+            diagAccText = `${real.diagnosis_accuracy_pct.toFixed(1)}%`;
+        } else if (real.diagnosis_accuracy !== undefined) {
+            diagAccText = `${(real.diagnosis_accuracy * 100).toFixed(1)}%`;
+        }
+        if (accEl) accEl.textContent = diagAccText;
+
+        // Detection Rate
+        let detRateText = "--%";
+        if (real.detection_rate_pct !== undefined) {
+            detRateText = `${real.detection_rate_pct.toFixed(1)}%`;
+        } else if (real.detection_rate !== undefined) {
+            detRateText = `${(real.detection_rate * 100).toFixed(1)}%`;
+        }
+        if (detEl) detEl.textContent = detRateText;
+
+        // Recovery Rate
+        let recRateText = "--%";
+        if (real.recovery_rate_pct !== undefined) {
+            recRateText = `${real.recovery_rate_pct.toFixed(1)}%`;
+        } else if (real.recovery_detection_accuracy !== undefined) {
+            recRateText = `${(real.recovery_detection_accuracy * 100).toFixed(1)}%`;
+        }
+        if (recEl) recEl.textContent = recRateText;
+
+        // Latency
         if (latEl) latEl.textContent = real.mean_detection_latency_s !== undefined ? `${real.mean_detection_latency_s.toFixed(1)}s` : "--s";
 
-        // Table
+        // Per-scenario empirical table
         const realBody = document.getElementById("realEmpiricalTableBody");
         if (realBody && real.per_class_metrics) {
             const rows = Object.entries(real.per_class_metrics);
             if (rows.length === 0) {
                 realBody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--color-text-muted);">No trials recorded yet. Run a real test above.</td></tr>`;
             } else {
-                realBody.innerHTML = rows.map(([cls, m]) => `
+                realBody.innerHTML = rows.map(([cls, m]) => {
+                    const trials = m.support !== undefined ? m.support : (m.trials !== undefined ? m.trials : 0);
+                    const prec = m.precision !== undefined ? m.precision.toFixed(2) : '--';
+                    const rec = m.recall !== undefined ? m.recall.toFixed(2) : '--';
+                    const f1 = m.f1_score !== undefined ? m.f1_score.toFixed(2) : (m.f1 !== undefined ? m.f1.toFixed(2) : '--');
+                    const meanDet = m.mean_detection_latency_s !== undefined ? `${m.mean_detection_latency_s.toFixed(1)}s` : (real.mean_detection_latency_s !== undefined ? `${real.mean_detection_latency_s.toFixed(1)}s` : '--');
+                    return `
                     <tr>
                         <td><strong>${cls}</strong></td>
-                        <td>${m.trials}</td>
-                        <td>${m.precision ? m.precision.toFixed(2) : '1.00'}</td>
-                        <td>${m.recall ? m.recall.toFixed(2) : '1.00'}</td>
-                        <td><strong style="color: var(--color-primary);">${m.f1 ? m.f1.toFixed(2) : '1.00'}</strong></td>
-                        <td>${m.mean_detection_latency_s ? m.mean_detection_latency_s.toFixed(1) + 's' : '4.2s'}</td>
-                    </tr>
-                `).join("");
+                        <td>${trials}</td>
+                        <td>${prec}</td>
+                        <td>${rec}</td>
+                        <td><strong style="color: var(--color-primary);">${f1}</strong></td>
+                        <td>${meanDet}</td>
+                    </tr>`;
+                }).join("");
+            }
+        }
+
+        // Recent trial records table
+        const recentBody = document.getElementById("recentTrialsTableBody");
+        if (recentBody) {
+            const trials = data.recent_trial_records || [];
+            if (trials.length === 0) {
+                recentBody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--color-text-muted);">No empirical trials recorded yet. Run an experiment above to log a trial.</td></tr>`;
+            } else {
+                recentBody.innerHTML = trials.slice(0, 15).map(t => {
+                    const verdictClass = t.correct_cause ? "mode-badge local" : "mode-badge cloud";
+                    const verdictText = t.correct_cause ? "PASS (Accurate)" : "PARTIAL (Detected)";
+                    const layerMatch = t.correct_layer ? '<span style="color: var(--color-success);">✓ Match</span>' : '<span style="color: var(--color-danger);">✗ Diff</span>';
+                    const locMatch = t.correct_location ? '<span style="color: var(--color-success);">✓ Match</span>' : '<span style="color: var(--color-danger);">✗ Diff</span>';
+                    const detTime = t.detection_latency_s !== undefined && t.detection_latency_s !== null ? `${t.detection_latency_s.toFixed(2)}s` : "--";
+                    const recTime = t.recovery_duration_s !== undefined && t.recovery_duration_s !== null ? `${t.recovery_duration_s.toFixed(2)}s` : "Verified";
+                    return `
+                    <tr>
+                        <td><code>${t.experiment_id || '--'}</code></td>
+                        <td><strong>${t.scenario_id || t.fault_type || '--'}</strong></td>
+                        <td>${t.predicted_cause || '--'}</td>
+                        <td>${layerMatch}</td>
+                        <td>${locMatch}</td>
+                        <td>${detTime}</td>
+                        <td>${recTime}</td>
+                        <td><span class="${verdictClass}">${verdictText}</span></td>
+                    </tr>`;
+                }).join("");
             }
         }
 
@@ -1217,15 +1278,20 @@ async function fetchValidationResults() {
         const synthBody = document.getElementById("syntheticBenchmarkTableBody");
         if (synthBody && synth.per_class_metrics) {
             const rows = Object.entries(synth.per_class_metrics);
-            synthBody.innerHTML = rows.map(([cls, m]) => `
+            synthBody.innerHTML = rows.map(([cls, m]) => {
+                const trials = m.support !== undefined ? m.support : (m.trials !== undefined ? m.trials : 5);
+                const prec = m.precision !== undefined ? m.precision.toFixed(2) : '--';
+                const rec = m.recall !== undefined ? m.recall.toFixed(2) : '--';
+                const f1 = m.f1_score !== undefined ? m.f1_score.toFixed(2) : (m.f1 !== undefined ? m.f1.toFixed(2) : '--');
+                return `
                 <tr>
                     <td><strong>${cls}</strong></td>
-                    <td>${m.trials || 10}</td>
-                    <td>${m.precision ? m.precision.toFixed(2) : '1.00'}</td>
-                    <td>${m.recall ? m.recall.toFixed(2) : '1.00'}</td>
-                    <td><strong style="color: var(--color-success);">${m.f1 ? m.f1.toFixed(2) : '1.00'}</strong></td>
-                </tr>
-            `).join("");
+                    <td>${trials}</td>
+                    <td>${prec}</td>
+                    <td>${rec}</td>
+                    <td><strong style="color: var(--color-success);">${f1}</strong></td>
+                </tr>`;
+            }).join("");
         }
     } catch (e) {
         console.warn("fetchValidationResults error:", e);

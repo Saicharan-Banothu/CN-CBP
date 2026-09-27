@@ -5,6 +5,7 @@
   "trials_per_scenario": 1,
   "detection_rate": 0.9,
   "diagnosis_accuracy": 0.2,
+  "layer_accuracy": 0.8,
   "localization_accuracy": 0.1,
   "recovery_detection_accuracy": 1.0,
   "mean_detection_latency_s": 14.31,

@@ -352,6 +352,7 @@ class ValidationRunner:
         total_trials = 0
         detected_trials = 0
         correct_diagnoses = 0
+        correct_layers = 0
         correct_localizations = 0
         correct_recoveries = 0
 
@@ -415,6 +416,16 @@ class ValidationRunner:
                 if is_correct_cause:
                     correct_diagnoses += 1
 
+                # Ground-truth layer evaluation
+                predicted_layer = rule_diags[0].affected_layer if rule_diags else "Network"
+                is_correct_layer = (
+                    scen["expected_layer"].lower().split("/")[0].strip() in predicted_layer.lower()
+                    or predicted_layer.lower() in scen["expected_layer"].lower()
+                    or (fault_type == "HEALTHY_NORMAL" and pred_canonical == "HEALTHY_NORMAL")
+                )
+                if is_correct_layer:
+                    correct_layers += 1
+
                 # Check localization accuracy
                 is_correct_loc = False
                 if fault_type == "HEALTHY_NORMAL" and "healthy" in hop_res.hop_location.lower():
@@ -466,11 +477,11 @@ class ValidationRunner:
                     expected_layer=scen["expected_layer"],
                     expected_location=scen["expected_location"],
                     predicted_cause=primary_rule or ml_cause,
-                    predicted_layer=rule_diags[0].affected_layer if rule_diags else "Network",
+                    predicted_layer=predicted_layer,
                     predicted_location=hop_res.hop_location,
                     confidence=ml_conf,
                     correct_cause=is_correct_cause,
-                    correct_layer=(expected_canonical == pred_canonical),
+                    correct_layer=is_correct_layer,
                     correct_location=is_correct_loc,
                     evidence_json=json.dumps({
                         "anomalies": [a.to_dict() for a in anomalies],
@@ -486,6 +497,7 @@ class ValidationRunner:
         # Compute performance metrics
         detection_rate = detected_trials / total_trials if total_trials > 0 else 0.0
         diagnosis_acc = correct_diagnoses / total_trials if total_trials > 0 else 0.0
+        layer_acc = correct_layers / total_trials if total_trials > 0 else 0.0
         localization_acc = correct_localizations / total_trials if total_trials > 0 else 0.0
         recovery_acc = correct_recoveries / total_trials if total_trials > 0 else 0.0
 
@@ -518,6 +530,7 @@ class ValidationRunner:
             "trials_per_scenario": trials_per_scenario,
             "detection_rate": round(detection_rate, 4),
             "diagnosis_accuracy": round(diagnosis_acc, 4),
+            "layer_accuracy": round(layer_acc, 4),
             "localization_accuracy": round(localization_acc, 4),
             "recovery_detection_accuracy": round(recovery_acc, 4),
             "mean_detection_latency_s": round(mean_det_lat, 2),
